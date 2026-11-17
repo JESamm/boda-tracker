@@ -8,7 +8,6 @@ services:
     buildCommand: npm ci --include=dev && npm run build --workspace @boda-tracker/api
     startCommand: npm run start --workspace @boda-tracker/api
     healthCheckPath: /health/live
-    maxShutdownDelaySeconds: 30
     envVars:
       - key: NODE_ENV
         value: production
@@ -33,7 +32,6 @@ services:
     buildCommand: npm ci --include=dev && npm run build --workspace @boda-tracker/dashboard
     startCommand: npm run start --workspace @boda-tracker/dashboard
     healthCheckPath: /login
-    maxShutdownDelaySeconds: 30
     envVars:
       - key: NODE_ENV
         value: production
