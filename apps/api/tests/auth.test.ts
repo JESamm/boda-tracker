@@ -331,6 +331,95 @@ describe('SACCO provisioning', () => {
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('ALREADY_EXISTS');
   });
+
+  it('lets a new SACCO administrator create an immediately active workspace without an existing account', async () => {
+    let provisioned: ProvisionSaccoInput | undefined;
+    const record: SaccoSummary = {
+      id: 'self-registered-sacco',
+      name: 'Westlands Riders SACCO',
+      registrationNumber: 'CS12345',
+      phoneNumber: '+254722222222',
+      operatingArea: 'Nairobi',
+      status: 'ACTIVE',
+      createdAt: new Date('2026-03-01T00:00:00.000Z'),
+      administrator: {
+        id: 'self-registered-admin',
+        fullName: 'SACCO Owner',
+        phoneNumber: '+254711111111',
+      },
+    };
+    const saccoRepository: SaccoRepository = {
+      async listSaccos() { return []; },
+      async createSacco(input) {
+        provisioned = input;
+        return record;
+      },
+    };
+    const { app } = createTestApi('SACCO_ADMIN', saccoRepository);
+    const response = await request(app)
+      .post('/api/v1/saccos/register')
+      .send({
+        name: record.name,
+        registrationNumber: 'CS 12345',
+        phoneNumber: '0722 222 222',
+        operatingArea: 'Nairobi',
+        adminFullName: record.administrator.fullName,
+        adminPhoneNumber: '0711 111 111',
+        adminPassword: 'A-unique-workspace-password-937!',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.status).toBe('ACTIVE');
+    expect(provisioned?.actor).toBeUndefined();
+    expect(provisioned?.registrationNumber).toBe('CS12345');
+    expect(provisioned?.phoneNumber).toBe('+254722222222');
+    expect(provisioned?.adminPhoneNumber).toBe('+254711111111');
+    expect(provisioned?.adminPasswordHash).not.toBe('A-unique-workspace-password-937!');
+  });
+
+  it('rejects invalid public SACCO registrations and reports duplicate details', async () => {
+    const duplicateRepository: SaccoRepository = {
+      async listSaccos() { return []; },
+      async createSacco() {
+        const error = new Error('Unique constraint violation.');
+        Object.assign(error, { code: 'P2002' });
+        throw error;
+      },
+    };
+    const { app } = createTestApi('SACCO_ADMIN', duplicateRepository);
+    const invalid = await request(app)
+      .post('/api/v1/saccos/register')
+      .send({
+        name: 'Westlands Riders SACCO',
+        adminFullName: 'SACCO Owner',
+        adminPhoneNumber: 'not-a-phone',
+        adminPassword: 'short',
+      });
+    expect(invalid.status).toBe(400);
+
+    const duplicate = await request(app)
+      .post('/api/v1/saccos/register')
+      .send({
+        name: 'Westlands Riders SACCO',
+        adminFullName: 'SACCO Owner',
+        adminPhoneNumber: '+254711111111',
+        adminPassword: 'A-unique-workspace-password-937!',
+      });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('ALREADY_EXISTS');
+  });
+
+  it('rate limits repeated public workspace registration attempts', async () => {
+    const { app } = createTestApi();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await request(app).post('/api/v1/saccos/register').send({});
+      expect(response.status).toBe(400);
+    }
+
+    const limited = await request(app).post('/api/v1/saccos/register').send({});
+    expect(limited.status).toBe(429);
+  });
 });
 
 describe('tenant-scoped rider and fleet directory', () => {

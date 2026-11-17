@@ -40,3 +40,8 @@ services:
           name: boda-tracker-api
           type: web
           envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_API_BASE_URL
+        fromService:
+          name: boda-tracker-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL

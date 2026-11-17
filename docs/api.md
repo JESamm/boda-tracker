@@ -18,6 +18,7 @@
 | POST | `/api/v1/auth/refresh` | Refresh token | Atomically rotate the refresh token and issue a new access token |
 | POST | `/api/v1/auth/logout` | Refresh token | Revoke the submitted refresh token |
 | GET | `/api/v1/auth/me` | Access token | Return the current active account; account and SACCO status are checked on every request |
+| POST | `/api/v1/saccos/register` | No | Create an active SACCO workspace and its first SACCO administrator atomically; limited to five registrations per client IP per hour |
 | GET | `/api/v1/saccos` | Platform admin | Return a bounded list of SACCOs with their initial administrator |
 | POST | `/api/v1/saccos` | Platform admin | Create a SACCO and its initial administrator in one transaction |
 | GET | `/api/v1/riders` | SACCO admin | Return a bounded, cursor-paginated list from the authenticated SACCO only |
@@ -40,6 +41,8 @@
 The one-time `npm run admin:create --workspace @boda-tracker/api` command bootstraps the initial `PLATFORM_ADMIN` after the database migration. The bootstrap is protected by a PostgreSQL advisory lock and refuses to create another platform admin after the first exists.
 
 SACCO provisioning accepts `registrationNumber` as optional. If supplied, it must contain 3–40 valid characters; an omitted or blank value is stored as `null` so it can be added later.
+
+The dashboard's public `/register` page uses the registration endpoint, then signs in the new administrator. The SACCO and administrator are created in one database transaction; duplicate registration details or phone numbers are rejected. Rider accounts created by that administrator belong to the same SACCO and can sign in to the rider app with the credentials issued by the SACCO.
 
 ## Planned routes
 

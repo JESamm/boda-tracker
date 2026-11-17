@@ -10,7 +10,7 @@ export interface ProvisionSaccoInput {
   adminFullName: string;
   adminPhoneNumber: string;
   adminPasswordHash: string;
-  actor: AuthenticatedUser;
+  actor?: AuthenticatedUser;
 }
 
 export interface SaccoSummary {
@@ -59,6 +59,49 @@ export function createSaccoRouter(
   const authenticate = authenticateRequest(authRepository, accessTokenSecret);
   const authorize = requireRoles('PLATFORM_ADMIN');
 
+  router.post('/register', async (request: Request, response: Response) => {
+    const input = provisionSchema.safeParse(request.body);
+    if (!input.success) {
+      response.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'Provide valid SACCO details and an administrator password of at least 14 characters.',
+        },
+      });
+      return;
+    }
+
+    const normalized = normalizeProvisionInput(input.data);
+    if (!normalized) {
+      response.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'Use Kenyan phone numbers and, when provided, a valid SACCO registration number.',
+        },
+      });
+      return;
+    }
+
+    try {
+      const sacco = await saccoRepository.createSacco({
+        ...normalized,
+        adminPasswordHash: await hashPassword(input.data.adminPassword),
+      });
+      response.status(201).json({ data: sacco });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        response.status(409).json({
+          error: {
+            code: 'ALREADY_EXISTS',
+            message: 'The SACCO registration, contact, or administrator phone number is already in use.',
+          },
+        });
+        return;
+      }
+      throw error;
+    }
+  });
+
   router.get('/', authenticate, authorize, async (request, response) => {
     const query = listSchema.safeParse(request.query);
     if (!query.success) {
@@ -84,17 +127,8 @@ export function createSaccoRouter(
       return;
     }
 
-    const adminPhoneNumber = normalizeKenyanPhoneNumber(input.data.adminPhoneNumber);
-    const phoneNumber = input.data.phoneNumber
-      ? normalizeKenyanPhoneNumber(input.data.phoneNumber)
-      : null;
-    const registrationNumber = input.data.registrationNumber
-      ?.replace(/[\s-]/g, '')
-      .toUpperCase() ?? null;
-
-    if (!adminPhoneNumber
-      || (input.data.phoneNumber && !phoneNumber)
-      || (registrationNumber !== null && !/^[A-Z0-9/]{3,40}$/.test(registrationNumber))) {
+    const normalized = normalizeProvisionInput(input.data);
+    if (!normalized) {
       response.status(400).json({
         error: {
           code: 'INVALID_REQUEST',
@@ -112,23 +146,20 @@ export function createSaccoRouter(
       return;
     }
 
-    const adminPasswordHash = await hashPassword(input.data.adminPassword);
     try {
       const sacco = await saccoRepository.createSacco({
-        name: input.data.name,
-        registrationNumber,
-        phoneNumber,
-        operatingArea: input.data.operatingArea || null,
-        adminFullName: input.data.adminFullName,
-        adminPhoneNumber,
-        adminPasswordHash,
+        ...normalized,
+        adminPasswordHash: await hashPassword(input.data.adminPassword),
         actor,
       });
       response.status(201).json({ data: sacco });
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         response.status(409).json({
-          error: { code: 'ALREADY_EXISTS', message: 'The SACCO registration number or phone number is already in use.' },
+          error: {
+            code: 'ALREADY_EXISTS',
+            message: 'The SACCO registration, contact, or administrator phone number is already in use.',
+          },
         });
         return;
       }
@@ -137,6 +168,31 @@ export function createSaccoRouter(
   });
 
   return router;
+}
+
+function normalizeProvisionInput(input: z.infer<typeof provisionSchema>) {
+  const adminPhoneNumber = normalizeKenyanPhoneNumber(input.adminPhoneNumber);
+  const phoneNumber = input.phoneNumber
+    ? normalizeKenyanPhoneNumber(input.phoneNumber)
+    : null;
+  const registrationNumber = input.registrationNumber
+    ?.replace(/[\s-]/g, '')
+    .toUpperCase() ?? null;
+
+  if (!adminPhoneNumber
+    || (input.phoneNumber && !phoneNumber)
+    || (registrationNumber !== null && !/^[A-Z0-9/]{3,40}$/.test(registrationNumber))) {
+    return null;
+  }
+
+  return {
+    name: input.name,
+    registrationNumber,
+    phoneNumber,
+    operatingArea: input.operatingArea || null,
+    adminFullName: input.adminFullName,
+    adminPhoneNumber,
+  };
 }
 
 function normalizeKenyanPhoneNumber(value: string): string | null {

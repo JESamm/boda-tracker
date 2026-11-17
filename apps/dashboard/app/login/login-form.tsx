@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
@@ -65,7 +66,9 @@ export function LoginForm() {
         {isSubmitting ? 'Signing in…' : 'Sign in'}
         {!isSubmitting && <span aria-hidden="true">→</span>}
       </button>
-      <p className="login-help">Need an account? Contact your platform administrator.</p>
+      <p className="login-help">
+        New to Boda-Tracker? <Link href="/register">Create your SACCO workspace</Link>
+      </p>
     </form>
   );
 }

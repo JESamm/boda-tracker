@@ -70,6 +70,7 @@ export function DashboardShell({
   const router = useRouter();
   const [userName, setUserName] = useState('Admin');
   const [userRole, setUserRole] = useState('');
+  const [saccoName, setSaccoName] = useState('');
   const [sessionError, setSessionError] = useState('');
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -85,6 +86,7 @@ export function DashboardShell({
         if (response.ok && mounted) {
           setUserName(result.user?.fullName ?? 'Admin');
           setUserRole(result.user?.role ?? '');
+          setSaccoName(result.user?.saccoName ?? '');
         } else if (mounted) {
           setSessionError(result.error?.message ?? 'Your session could not be verified.');
         }
@@ -124,8 +126,10 @@ export function DashboardShell({
 
         <div className="organization-card">
           <span className="organization-avatar">S</span>
-          <span className="organization-copy"><strong>SACCO workspace</strong><span>Administrator view</span></span>
-          <span className="organization-chevron" aria-hidden="true">⌄</span>
+          <span className="organization-copy">
+            <strong>{userRole === 'PLATFORM_ADMIN' ? 'Platform administration' : saccoName || 'SACCO workspace'}</strong>
+            <span>{userRole === 'PLATFORM_ADMIN' ? 'Platform administrator' : 'SACCO workspace'}</span>
+          </span>
         </div>
 
         <nav className="sidebar-nav" aria-label="Main navigation">

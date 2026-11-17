@@ -8,11 +8,11 @@ The initial foundation now includes the first usable identity and organisation w
 
 - A versioned TypeScript/Express API with liveness and PostgreSQL readiness endpoints.
 - A PostgreSQL Prisma 7 schema with SACCO-scoped relationships, operational records, audit records, and session-token storage.
-- A protected Next.js/TypeScript administrative dashboard with sign-in, SACCO provisioning, rider management, fleet management, and vehicle assignments. Reports and settings remain explicit empty states until their APIs are implemented.
+- A Next.js/TypeScript administration portal with self-service SACCO workspace registration, SACCO-scoped rider and fleet management, and vehicle assignments. Reports and settings remain explicit empty states until their APIs are implemented.
 - A React Native Android app scaffolded with Expo and TypeScript.
 - API health endpoint tests and architecture/security/privacy documentation.
 
-API login, refresh-token rotation/revocation, account status checks, one-time platform-admin bootstrap, platform-admin SACCO provisioning, SACCO-scoped rider and vehicle creation/listing, vehicle assignments, work sessions, rider trip/fare recording, and rider-only map search and route-preview endpoints are implemented. The dashboard's SACCO, rider, fleet, and assignment screens use those APIs; the rider app can start a trip, record its fare, view recent trips, and preview a route on the map. Expenses, reports, route-history persistence, offline synchronization, password recovery, and account invitations are **not implemented yet**. Map previews use public OpenStreetMap tiles, Photon place search, and the OSRM demo router with a car-driving profile; they are best-effort prototype services, not motorcycle navigation, and must not be used to guide real rides. See the map setup below. Other operational pages are explicit empty states and do not contain fabricated records. The original root Vite UI is retained for reference, and its JSON-backed API is archived at `legacy/prototype-server.js`; neither is used by workspace scripts or suitable for production.
+API login, refresh-token rotation/revocation, account status checks, one-time platform-admin bootstrap, public SACCO workspace registration, platform-admin SACCO provisioning, SACCO-scoped rider and vehicle creation/listing, vehicle assignments, work sessions, rider trip/fare recording, and rider-only map search and route-preview endpoints are implemented. A new SACCO administrator can register a workspace at `/register`; the workspace activates immediately, and the administrator is signed in to the portal. SACCO admins add rider accounts in their workspace; those credentials are accepted by the Boda-Tracker rider app through the shared API. Expenses, reports, route-history persistence, offline synchronization, password recovery, and account invitations are **not implemented yet**. Map previews use public OpenStreetMap tiles, Photon place search, and the OSRM demo router with a car-driving profile; they are best-effort prototype services, not motorcycle navigation, and must not be used to guide real rides. See the map setup below. Other operational pages are explicit empty states and do not contain fabricated records. The original root Vite UI is retained for reference, and its JSON-backed API is archived at `legacy/prototype-server.js`; neither is used by workspace scripts or suitable for production.
 
 ### Maps setup
 
@@ -76,6 +76,14 @@ Docker is optional. If using Docker, start Docker Desktop before using the local
    ```
 
    Bootstrap refuses to run once a platform administrator exists. Do not reuse this example phone number.
+
+   If the configured database already contains the specific emulator test administrator, replace it with your intended administrator using the guarded local command:
+
+   ```powershell
+   npm run admin:replace-test --workspace @boda-tracker/api
+   ```
+
+   Run it only after confirming `apps/api/.env` points to the intended database. It prompts for the new name and phone and reads the password without echoing it. It refuses to modify any account other than the expected test administrator and revokes that account's refresh sessions.
 
 6. Run API and dashboard:
 

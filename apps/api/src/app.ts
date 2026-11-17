@@ -51,6 +51,12 @@ export function createApp({
   });
   app.use('/api/v1/auth', authLimiter);
   app.use('/api/v1/auth', createAuthRouter(auth, accessTokenSecret));
+  app.use('/api/v1/saccos/register', rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  }));
   app.use('/api/v1/saccos', createSaccoRouter(auth, saccos, accessTokenSecret));
   app.use('/api/v1/maps', rateLimit({
     windowMs: 60 * 1000,

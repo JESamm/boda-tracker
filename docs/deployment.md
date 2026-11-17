@@ -35,8 +35,14 @@ The Android app is not deployed by this Blueprint.
    ```
 
    Replace the example phone number and use a unique password. Bootstrap is intentionally one-time. Render's free web services do not provide Shell access, so run this command locally; never commit the credentials.
+
+   If the intended database already contains the specific emulator test administrator, do not rerun bootstrap. After confirming `apps/api/.env` points to the same intended database, run `npm run admin:replace-test --workspace @boda-tracker/api` from an interactive local terminal. The command only replaces that exact test record, prompts for the new login details with the password hidden, and revokes its refresh sessions.
 6. Verify the API at `/health/live` and `/api/v1/health/ready`, then open the dashboard service URL and sign in at `/login`.
 7. Configure a production Android build with the deployed API base URL before distributing the rider app. Do not reuse the development URL in `apps/rider-app/.env.example`.
+
+SACCO administrators can also register directly from the dashboard's **Create your SACCO workspace** link on `/login` (or at `/register`). Registration activates the SACCO immediately and signs in its first administrator. From the portal, add rider accounts; riders can use those issued phone/password credentials in the Android rider app, which authenticates against the same API and database.
+
+The dashboard's `NEXT_PUBLIC_API_BASE_URL` must point to the deployed API base path (`/api/v1`) so the browser can register directly with the API; the Render Blueprint derives it from the API service URL. The API CORS origin must match the dashboard URL.
 
 ## Database setup and migration operations
 

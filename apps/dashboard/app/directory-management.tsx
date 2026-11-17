@@ -91,7 +91,7 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
       setRiderForm(emptyRiderForm);
       setVehicleForm(emptyVehicleForm);
       setNotice(type === 'riders'
-        ? 'Rider account created. Share the initial password privately.'
+        ? 'Rider account created. Share the login phone and initial password privately; they can sign in to the Boda-Tracker rider app.'
         : 'Vehicle registered to this SACCO.');
     } catch {
       setError('The request could not be confirmed. Check the directory before retrying.');

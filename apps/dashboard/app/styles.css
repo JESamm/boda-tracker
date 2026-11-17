@@ -242,7 +242,21 @@ button, input { font: inherit; }
 .login-submit:hover { background: var(--green-dark); }
 .login-submit:disabled { cursor: wait; opacity: .7; }
 .login-help { margin: 5px 0 0; color: #99a39b; font-size: 10px; text-align: center; }
+.login-help a, .auth-page-link { color: var(--green); font-weight: 700; }
+.login-help a:hover, .auth-page-link:hover { text-decoration: underline; }
 .login-footer { margin: 0; color: #a0a9a2; font-size: 9px; text-align: center; }
+.auth-page-link { font-size: 11px; }
+.register-card { width: min(100%, 560px); margin: 28px auto; }
+.register-card h1 { margin-top: 9px; }
+.registration-form { gap: 8px; margin-top: 20px; }
+.registration-form h2 { margin: 12px 0 0; padding-bottom: 8px; border-bottom: 1px solid var(--line); color: #46534a; font-size: 12px; }
+.registration-fields-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.registration-fields-row > div { display: grid; gap: 9px; }
+.registration-form label span { color: #a0a9a2; font-weight: 400; }
+.registration-note { margin: 0; color: #89948d; font-size: 10px; line-height: 1.5; }
+.registration-success { display: grid; gap: 14px; margin-top: 24px; padding: 18px; border: 1px solid #dcebe0; border-radius: 7px; background: #f5fbf6; color: #536258; font-size: 12px; line-height: 1.6; }
+.registration-success strong { color: #327653; font-size: 14px; }
+.registration-success .login-submit { margin-top: 2px; }
 
 @media (min-width: 1600px) {
   .page-content { padding-top: 42px; }
@@ -267,6 +281,8 @@ button, input { font: inherit; }
   .brand-mark { width: 29px; height: 29px; font-size: 15px; }
   .brand-name { font-size: 13px; }
   .organization-card, .sidebar-bottom { display: none; }
+  .registration-fields-row { grid-template-columns: 1fr; gap: 8px; }
+  .register-card { padding: 24px; }
   .sidebar-nav { display: flex; overflow-x: auto; flex: none; flex-direction: row; gap: 5px; margin-top: 0; padding-bottom: 1px; scrollbar-width: none; }
   .sidebar-nav::-webkit-scrollbar { display: none; }
   .nav-group { display: flex; flex: 0 0 auto; gap: 3px; }

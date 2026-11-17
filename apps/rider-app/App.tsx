@@ -39,18 +39,18 @@ const osmMapStyle: StyleSpecification = {
 const sessionStorageKey = 'boda-rider-session';
 const androidTopInset = Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 0 : 0;
 const colors = {
-  primary: '#26364d',
-  primaryDark: '#1b293c',
-  primarySoft: '#e9edf3',
-  ink: '#1d2735',
-  muted: '#687486',
-  line: '#e1e5eb',
-  canvas: '#f5f6f8',
+  primary: '#0f6cbd',
+  primaryDark: '#004578',
+  primarySoft: '#eff6fc',
+  ink: '#242424',
+  muted: '#616161',
+  line: '#d1d1d1',
+  canvas: '#f5f5f5',
   white: '#ffffff',
-  gold: '#c18c45',
-  goldSoft: '#f6efe4',
-  red: '#a3423b',
-  dangerSoft: '#fbefed',
+  accent: '#0f6cbd',
+  accentSoft: '#eff6fc',
+  red: '#c42b1c',
+  dangerSoft: '#fdf3f4',
 };
 
 type RiderUser = {
@@ -510,7 +510,7 @@ function LoginScreen({
             <Text style={styles.eyebrow}>RIDER APP · KENYA</Text>
             <Text style={styles.loginTitle}>Your day starts here.</Text>
             <Text style={styles.loginDescription}>
-              Sign in with the account your SACCO gave you to access your rider workspace.
+              Sign in with the phone number and password your SACCO administrator gave you. Rider accounts created in the SACCO portal work here.
             </Text>
           </View>
 
@@ -523,7 +523,7 @@ function LoginScreen({
               keyboardType="phone-pad"
               onChangeText={setPhoneNumber}
               placeholder="+254 7XX XXX XXX"
-              placeholderTextColor="#8993a2"
+              placeholderTextColor={colors.muted}
               style={styles.input}
               value={phoneNumber}
             />
@@ -535,7 +535,7 @@ function LoginScreen({
               onChangeText={setPassword}
               onSubmitEditing={signIn}
               placeholder="Enter your password"
-              placeholderTextColor="#8993a2"
+              placeholderTextColor={colors.muted}
               secureTextEntry
               style={styles.input}
               value={password}
@@ -750,7 +750,7 @@ function TripsScreen({
               keyboardType="decimal-pad"
               onChangeText={setFareAmount}
               placeholder="e.g. 150.00"
-              placeholderTextColor="#8993a2"
+              placeholderTextColor={colors.muted}
               style={styles.tripFareInput}
               value={fareAmount}
             />
@@ -1138,7 +1138,7 @@ function MapsScreen({
         editable={Boolean(activeTrip)}
         onChangeText={(value) => { setSearchText(value); setSuggestions([]); }}
         placeholder="Search a place or address"
-        placeholderTextColor="#8993a2"
+        placeholderTextColor={colors.muted}
         style={[styles.tripFareInput, !activeTrip && styles.inputDisabled]}
         value={searchText}
       />
@@ -1198,7 +1198,7 @@ function MapsScreen({
               id="route-layer"
               type="line"
               paint={{
-                'line-color': colors.gold,
+                'line-color': colors.accent,
                 'line-width': 5,
                 'line-opacity': 0.9,
               }}
@@ -1490,7 +1490,7 @@ const styles = StyleSheet.create({
   loadingText: { color: colors.muted, fontSize: 14 },
   loginScreen: { flex: 1, paddingTop: androidTopInset, backgroundColor: colors.canvas },
   loginKeyboard: { flex: 1 },
-  loginContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 24 },
+  loginContent: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 28, paddingBottom: 20 },
   loginBrand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   brandMark: {
     width: 44, height: 44, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
@@ -1498,72 +1498,71 @@ const styles = StyleSheet.create({
   },
   brandLetter: { color: colors.white, fontSize: 21, fontWeight: '800' },
   loginBrandName: { color: colors.ink, fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
-  loginIntro: { marginTop: 58 },
-  eyebrow: { color: colors.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.8 },
-  loginTitle: { marginTop: 12, color: colors.ink, fontSize: 36, fontWeight: '800', letterSpacing: -1.4 },
-  loginDescription: { maxWidth: 340, marginTop: 11, color: colors.muted, fontSize: 15, lineHeight: 23 },
+  loginIntro: { marginTop: 42 },
+  eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
+  loginTitle: { marginTop: 10, color: colors.ink, fontSize: 34, fontWeight: '700', letterSpacing: -1.1 },
+  loginDescription: { maxWidth: 340, marginTop: 9, color: colors.muted, fontSize: 14, lineHeight: 21 },
   loginCard: {
-    marginTop: 32, padding: 21, borderRadius: 6, borderWidth: 1, borderColor: colors.line,
-    backgroundColor: colors.white, elevation: 2,
+    marginTop: 27, padding: 19, borderRadius: 7, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: colors.white, elevation: 1,
   },
-  fieldLabel: { color: colors.ink, fontSize: 13, fontWeight: '700' },
-  passwordLabel: { marginTop: 19 },
+  fieldLabel: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  passwordLabel: { marginTop: 17 },
   input: {
-    height: 54, marginTop: 9, paddingHorizontal: 15, borderRadius: 5,
+    height: 51, marginTop: 8, paddingHorizontal: 13, borderRadius: 4,
     borderWidth: 1, borderColor: colors.line, color: colors.ink, fontSize: 15,
-    backgroundColor: '#f9fafb',
+    backgroundColor: colors.white,
   },
   loginError: {
-    marginTop: 15, padding: 12, borderRadius: 4, color: colors.red,
+    marginTop: 13, padding: 11, borderRadius: 4, color: colors.red,
     backgroundColor: colors.dangerSoft, fontSize: 13, lineHeight: 19,
   },
   primaryButton: {
-    height: 54, marginTop: 22, alignItems: 'center', justifyContent: 'center',
-    borderRadius: 5, backgroundColor: colors.primary,
+    height: 50, marginTop: 19, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 4, backgroundColor: colors.primary,
   },
-  primaryButtonText: { color: colors.white, fontSize: 15, fontWeight: '800' },
+  primaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '700' },
   buttonDisabled: { opacity: 0.55 },
   buttonPressed: { opacity: 0.82 },
-  loginHelp: { marginTop: 17, color: colors.muted, fontSize: 12, textAlign: 'center' },
-  loginFooter: { marginTop: 'auto', paddingTop: 25, color: colors.muted, fontSize: 12, textAlign: 'center' },
+  loginHelp: { marginTop: 15, color: colors.muted, fontSize: 12, textAlign: 'center' },
+  loginFooter: { marginTop: 'auto', paddingTop: 20, color: colors.muted, fontSize: 11, textAlign: 'center' },
   topBar: {
-    height: 66, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center',
+    height: 62, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.line,
     backgroundColor: colors.white,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   brandMarkSmall: {
-    width: 31, height: 31, borderRadius: 5, alignItems: 'center', justifyContent: 'center',
+    width: 31, height: 31, borderRadius: 4, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.primary,
   },
   brandLetterSmall: { color: colors.white, fontSize: 16, fontWeight: '800' },
   brandName: { color: colors.ink, fontSize: 15, fontWeight: '800' },
   avatar: {
-    width: 37, height: 37, borderRadius: 5, alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 4, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.primarySoft,
   },
   avatarText: { color: colors.primary, fontSize: 13, fontWeight: '800' },
-  scrollContent: { paddingHorizontal: 22, paddingTop: 28, paddingBottom: 38 },
-  dateLabel: { color: colors.gold, fontSize: 10, fontWeight: '800', letterSpacing: 1.7 },
-  greeting: { marginTop: 8, color: colors.ink, fontSize: 32, fontWeight: '800', letterSpacing: -1.1 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 30 },
+  dateLabel: { color: colors.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
+  greeting: { marginTop: 7, color: colors.ink, fontSize: 30, fontWeight: '700', letterSpacing: -0.8 },
   pageSubtitle: { marginTop: 4, color: colors.muted, fontSize: 14 },
   welcomeCard: {
-    marginTop: 22, paddingVertical: 6, backgroundColor: colors.canvas,
+    marginTop: 19, paddingVertical: 5, backgroundColor: colors.canvas,
   },
   welcomeTop: { flexDirection: 'row', alignItems: 'center' },
   statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10,
-    paddingVertical: 6, borderRadius: 4, backgroundColor: colors.primarySoft,
+    paddingVertical: 6, borderRadius: 3, backgroundColor: colors.primarySoft,
   },
-  statusDot: { width: 7, height: 7, borderRadius: 1, backgroundColor: colors.gold },
-  statusText: { color: colors.primaryDark, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  welcomeTitle: { marginTop: 16, color: colors.ink, fontSize: 26, fontWeight: '800' },
+  statusDot: { width: 7, height: 7, borderRadius: 1, backgroundColor: colors.accent },
+  statusText: { color: colors.primaryDark, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
+  welcomeTitle: { marginTop: 14, color: colors.ink, fontSize: 25, fontWeight: '700' },
   welcomeBody: { marginTop: 7, color: colors.muted, fontSize: 13, lineHeight: 20 },
-  sectionTitle: { marginTop: 27, marginBottom: 12, color: colors.ink, fontSize: 17, fontWeight: '800' },
+  sectionTitle: { marginTop: 24, marginBottom: 11, color: colors.ink, fontSize: 16, fontWeight: '700' },
   featureCard: {
     minHeight: 78, marginBottom: 10, padding: 13, flexDirection: 'row', alignItems: 'center',
     gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 5, backgroundColor: colors.white,
-    elevation: 1,
   },
   featureIcon: { width: 43, height: 43, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
   featureIconText: { color: colors.primary, fontSize: 21, fontWeight: '800' },
@@ -1572,34 +1571,34 @@ const styles = StyleSheet.create({
   featureDescription: { marginTop: 4, color: colors.muted, fontSize: 11, lineHeight: 16 },
   chevron: { color: colors.muted, fontSize: 25 },
   workdayCard: {
-    marginTop: 13, padding: 18, borderRadius: 5, borderWidth: 1, borderColor: colors.line,
-    backgroundColor: colors.white, elevation: 1,
+    marginTop: 12, padding: 16, borderRadius: 5, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: colors.white,
   },
-  workdayTitle: { color: colors.ink, fontSize: 15, fontWeight: '800' },
-  workdayVehicle: { marginTop: 12, color: colors.primary, fontSize: 16, fontWeight: '800' },
+  workdayTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  workdayVehicle: { marginTop: 11, color: colors.primaryDark, fontSize: 15, fontWeight: '700' },
   workdayDescription: { marginTop: 7, color: colors.muted, fontSize: 12, lineHeight: 18 },
   workdayLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
   workdayButton: {
-    minHeight: 44, marginTop: 15, alignItems: 'center', justifyContent: 'center',
+    minHeight: 44, marginTop: 14, alignItems: 'center', justifyContent: 'center',
     borderRadius: 4,
   },
   startShiftButton: { backgroundColor: colors.primary },
-  startShiftButtonText: { color: colors.white, fontSize: 14, fontWeight: '800' },
-  endShiftButton: { borderWidth: 1, borderColor: '#f0d7d2', backgroundColor: '#fff8f7' },
-  endShiftButtonText: { color: colors.red, fontSize: 14, fontWeight: '800' },
+  startShiftButtonText: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  endShiftButton: { borderWidth: 1, borderColor: '#f1b8b2', backgroundColor: colors.white },
+  endShiftButtonText: { color: colors.red, fontSize: 14, fontWeight: '700' },
   tripActionCard: {
-    marginTop: 22, padding: 18, borderRadius: 5, borderWidth: 1, borderColor: colors.line,
-    backgroundColor: colors.white, elevation: 1,
+    marginTop: 20, padding: 16, borderRadius: 5, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: colors.white,
   },
   tripVehicle: { marginTop: 8, marginBottom: 18, color: colors.muted, fontSize: 12 },
   tripActionDescription: { marginTop: 8, color: colors.muted, fontSize: 12, lineHeight: 18 },
   tripFareInput: {
-    height: 50, marginTop: 8, paddingHorizontal: 13, borderRadius: 4,
+    height: 48, marginTop: 8, paddingHorizontal: 13, borderRadius: 4,
     borderWidth: 1, borderColor: colors.line, color: colors.ink, fontSize: 16,
-    backgroundColor: '#f9fafb',
+    backgroundColor: colors.white,
   },
   tripPrimaryButton: {
-    minHeight: 48, marginTop: 16, alignItems: 'center', justifyContent: 'center',
+    minHeight: 46, marginTop: 15, alignItems: 'center', justifyContent: 'center',
     borderRadius: 4, backgroundColor: colors.primary,
   },
   tripLoading: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -1615,7 +1614,7 @@ const styles = StyleSheet.create({
     marginTop: 18, padding: 16, borderRadius: 5, backgroundColor: colors.primarySoft,
   },
   mapNoticeTitle: { color: colors.primaryDark, fontSize: 13, fontWeight: '800' },
-  mapNoticeBody: { marginTop: 5, color: '#3e4b5e', fontSize: 11, lineHeight: 17 },
+  mapNoticeBody: { marginTop: 5, color: colors.primaryDark, fontSize: 11, lineHeight: 17 },
   mapLocationButton: {
     minHeight: 44, marginTop: 12, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: colors.line, borderRadius: 4, backgroundColor: colors.white,
@@ -1642,7 +1641,7 @@ const styles = StyleSheet.create({
     marginTop: 12, padding: 14, borderRadius: 5, borderWidth: 1,
     borderColor: colors.line, backgroundColor: colors.white,
   },
-  destinationLabel: { color: colors.gold, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  destinationLabel: { color: colors.accent, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   destinationName: { marginTop: 5, color: colors.ink, fontSize: 13, fontWeight: '700' },
   routeCard: {
     marginTop: 9, padding: 14, borderWidth: 1, borderColor: colors.line,
@@ -1658,13 +1657,13 @@ const styles = StyleSheet.create({
   setupRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   setupCheck: { width: 26, height: 26, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySoft },
   setupCheckText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
-  setupPending: { width: 26, height: 26, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.goldSoft },
-  setupPendingText: { color: colors.gold, fontSize: 12, fontWeight: '800' },
+  setupPending: { width: 26, height: 26, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+  setupPendingText: { color: colors.accent, fontSize: 12, fontWeight: '700' },
   setupCopy: { flex: 1 },
   setupStepTitle: { color: colors.ink, fontSize: 12, fontWeight: '700' },
   setupStepBody: { marginTop: 3, color: colors.muted, fontSize: 10, lineHeight: 15 },
-  stepDone: { color: colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
-  stepWait: { color: colors.gold, fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
+  stepDone: { color: colors.primary, fontSize: 9, fontWeight: '700', letterSpacing: 0.7 },
+  stepWait: { color: colors.accent, fontSize: 9, fontWeight: '700', letterSpacing: 0.7 },
   setupDivider: { height: 1, marginVertical: 13, marginLeft: 37, backgroundColor: colors.line },
   safeNote: { marginTop: 19, color: colors.muted, fontSize: 11, textAlign: 'center' },
   emptyCard: {
@@ -1679,13 +1678,13 @@ const styles = StyleSheet.create({
   infoTitle: { marginBottom: 10, color: colors.primaryDark, fontSize: 13, fontWeight: '800' },
   infoLine: { marginTop: 5, color: colors.primaryDark, fontSize: 12 },
   profileCard: {
-    marginTop: 22, paddingVertical: 24, alignItems: 'center', borderRadius: 5,
+    marginTop: 20, paddingVertical: 22, alignItems: 'center', borderRadius: 5,
     borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white,
   },
   profileAvatar: { width: 68, height: 68, borderRadius: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySoft },
   profileInitials: { color: colors.primary, fontSize: 23, fontWeight: '800' },
   profileName: { marginTop: 13, color: colors.ink, fontSize: 18, fontWeight: '800' },
-  profileRole: { marginTop: 5, color: colors.gold, fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
+  profileRole: { marginTop: 5, color: colors.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
   detailsCard: { marginTop: 13, paddingHorizontal: 16, borderRadius: 5, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
   detailRow: { minHeight: 55, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   detailLabel: { color: colors.muted, fontSize: 12 },
@@ -1693,17 +1692,17 @@ const styles = StyleSheet.create({
   detailDivider: { height: 1, backgroundColor: colors.line },
   signOutButton: {
     height: 51, marginTop: 19, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#efd6d3', borderRadius: 5, backgroundColor: colors.white,
+    borderWidth: 1, borderColor: '#f1b8b2', borderRadius: 4, backgroundColor: colors.white,
   },
   signOutText: { color: colors.red, fontSize: 14, fontWeight: '800' },
   inlineError: { marginTop: 12, color: colors.red, fontSize: 12 },
   tabBar: {
-    height: 74, paddingHorizontal: 7, flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line,
+    height: 70, paddingHorizontal: 7, flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line,
     backgroundColor: colors.white,
   },
   tab: { flex: 1, marginHorizontal: 4, marginVertical: 6, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 4 },
   tabActive: { backgroundColor: colors.primarySoft },
-  tabIcon: { color: '#8993a2', fontSize: 21, lineHeight: 25 },
+  tabIcon: { color: '#8a8886', fontSize: 20, lineHeight: 24 },
   tabIconActive: { color: colors.primary, fontWeight: '800' },
   tabLabel: { color: colors.muted, fontSize: 10, fontWeight: '600' },
   tabLabelActive: { color: colors.primary, fontWeight: '800' },

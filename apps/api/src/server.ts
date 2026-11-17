@@ -143,8 +143,8 @@ const app = createApp({
         await transaction.auditLog.create({
           data: {
             saccoId: sacco.id,
-            actorUserId: input.actor.id,
-            action: 'sacco.created',
+            actorUserId: input.actor?.id ?? administrator.id,
+            action: input.actor ? 'sacco.created' : 'sacco.self_registered',
             entityType: 'Sacco',
             entityId: sacco.id,
             metadata: { administratorId: administrator.id },
