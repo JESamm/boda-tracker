@@ -133,4 +133,4 @@ See [docs/security.md](./docs/security.md), [docs/privacy.md](./docs/privacy.md)
 
 ## Deployment
 
-The Render Blueprint is prepared but not deployed. It defines the API, admin dashboard, and managed PostgreSQL in Singapore; applying it creates paid resources. A private GitHub repository, a connected Render account, and a review of current pricing and operational requirements are still needed before launch. See [docs/deployment.md](./docs/deployment.md).
+The Render Blueprint is prepared for free API and admin services using the existing Supabase database, but has not been applied. This is a testing setup, not production hosting; free services can sleep and the database provider's free-tier limits apply. See [docs/deployment.md](./docs/deployment.md) for setup and deployment steps.

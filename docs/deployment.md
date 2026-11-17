@@ -2,9 +2,9 @@
 
 ## Current status
 
-`render.yaml` defines a Render deployment for the API, admin dashboard, and managed PostgreSQL in Singapore. It has not been connected to a repository or deployed. Review Render's current prices before applying the Blueprint: the API and dashboard use paid `0.5c-512mb` plans, and PostgreSQL uses a paid `0.5c-1g` plan so database migrations can run before deploys and data is not on an expiring free database.
+`render.yaml` defines the API and admin dashboard on Render's free web-service plan in Singapore, using the existing Supabase PostgreSQL database. The configured Supabase endpoint is in AWS `eu-west-1`, so requests between it and Render Singapore cross regions and may have noticeable latency. The Blueprint has not yet been applied. This free-tier setup is for testing, not production: Render free services spin down after inactivity, and Supabase free-project limits, pausing, backups, and availability may affect the database.
 
-The Git repository currently has no commits or remote. Render deployment requires connecting a private GitHub repository containing this project. The Android app is not deployed by this Blueprint.
+The Android app is not deployed by this Blueprint.
 
 ## Configuration
 
@@ -16,24 +16,31 @@ The Git repository currently has no commits or remote. Render deployment require
 - Never use example passwords or commit real secrets. Use separate credentials for development, staging, and production.
 - Require HTTPS and secure secret injection in every shared environment.
 
-## Render setup
+## Free-tier Render setup
 
-1. Review Render's current compute and PostgreSQL pricing, backup options, and Singapore region availability before creating resources. Applying the Blueprint creates billable services and a database.
-2. Create a private GitHub repository and push this project without any `.env` files or real credentials. Connect the repository to Render as a Blueprint using the root `render.yaml`.
-3. Check the Blueprint preview. It creates the API, admin dashboard, and PostgreSQL; Render generates `AUTH_ACCESS_TOKEN_SECRET`, wires the API/database URLs, and applies committed migrations before each API deploy.
-4. After the first successful deploy, provision the platform administrator once using the API service's Shell:
+1. Connect the private `JESamm/boda-tracker` repository to Render as a Blueprint using the root `render.yaml`. Review the Blueprint preview; it defines two free web services and does not create a database.
+2. Set `DATABASE_URL` on the API service to the existing Supabase PostgreSQL connection string using Render's environment settings. Keep the connection string private. Use a Supabase session-pooler or direct connection appropriate for the deployed API.
+3. In the API service's Render settings, create a deploy hook. In GitHub repository settings, add these Actions repository secrets:
+   - `MIGRATION_DATABASE_URL`: the Supabase session-pooler or direct connection URL for running Prisma migrations.
+   - `RENDER_API_DEPLOY_HOOK_URL`: the API service's secret Render deploy hook URL.
+4. Run the **Deploy to Render** workflow from the GitHub Actions tab. It applies committed migrations to Supabase first, then triggers the API deployment. API auto-deploy is disabled to prevent deploying code without its migrations; run this workflow for API changes. The dashboard can auto-deploy independently.
+5. After the API deploy succeeds, create the initial platform administrator once from a local PowerShell session with this repository checked out. The API's local `.env` must point to the same Supabase database:
 
-   ```sh
+   ```powershell
+   $env:BOOTSTRAP_ADMIN_NAME = "Platform Administrator"
+   $env:BOOTSTRAP_ADMIN_PHONE = "+254712345678"
+   $env:BOOTSTRAP_ADMIN_PASSWORD = Read-Host "One-time administrator password"
    npm run admin:create --workspace @boda-tracker/api
+   Remove-Item Env:BOOTSTRAP_ADMIN_NAME, Env:BOOTSTRAP_ADMIN_PHONE, Env:BOOTSTRAP_ADMIN_PASSWORD
    ```
 
-   Before running it, add `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PHONE`, and a unique `BOOTSTRAP_ADMIN_PASSWORD` to the API service environment. Remove those three variables immediately after the command succeeds. Bootstrap is intentionally one-time.
-5. Verify the API at `/health/live` and `/api/v1/health/ready`, then open the dashboard service URL and sign in at `/login`.
-6. Configure a production Android build with the deployed API base URL before distributing the rider app. Do not reuse the development URL in `apps/rider-app/.env.example`.
+   Replace the example phone number and use a unique password. Bootstrap is intentionally one-time. Render's free web services do not provide Shell access, so run this command locally; never commit the credentials.
+6. Verify the API at `/health/live` and `/api/v1/health/ready`, then open the dashboard service URL and sign in at `/login`.
+7. Configure a production Android build with the deployed API base URL before distributing the rider app. Do not reuse the development URL in `apps/rider-app/.env.example`.
 
 ## Database setup and migration operations
 
-Use a managed PostgreSQL service or a maintained self-hosted PostgreSQL deployment. Verify current region availability, pricing, persistent-storage guarantees, connection limits, TLS, backup/restore, and provider terms before choosing a host.
+The current deployment uses the Supabase PostgreSQL project already configured for development. Verify its region, free-tier limits, connection limits, TLS, backups, restore options, and data retention before using real rider data.
 
 `DATABASE_URL` is used by the running API. If it points to a transaction pooler, set `MIGRATION_DATABASE_URL` in `apps/api/.env` to a direct or session-pooler connection for Prisma migration commands; the Prisma config falls back to `DATABASE_URL` when it is unset.
 
@@ -43,7 +50,7 @@ npm run db:generate
 npm run db:migrate
 ```
 
-Use `npm run db:deploy` for applying committed migrations in a deployment pipeline; do not use development migration commands against production. Render runs this command as the API service's pre-deploy step.
+Use `npm run db:deploy` for applying committed migrations in a deployment pipeline; do not use development migration commands against production. The GitHub Actions deployment workflow runs migrations with `MIGRATION_DATABASE_URL` before triggering the Render API deploy hook.
 
 ## Operational readiness checklist
 
