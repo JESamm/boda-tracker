@@ -44,6 +44,8 @@ SACCO administrators can also register directly from the dashboard's **Create yo
 
 The dashboard's `NEXT_PUBLIC_API_BASE_URL` must point to the deployed API base path (`/api/v1`) so the browser can register directly with the API; the Render Blueprint derives it from the API service URL. The API CORS origin must match the dashboard URL.
 
+The API trusts Render's single inbound proxy hop so IP-based rate limits use the client address from `X-Forwarded-For`; do not expose the API directly behind additional untrusted proxy hops.
+
 ## Database setup and migration operations
 
 The current deployment uses the Supabase PostgreSQL project already configured for development. Verify its region, free-tier limits, connection limits, TLS, backups, restore options, and data retention before using real rider data.

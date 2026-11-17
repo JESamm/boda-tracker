@@ -411,13 +411,20 @@ describe('SACCO provisioning', () => {
 
   it('rate limits repeated public workspace registration attempts', async () => {
     const { app } = createTestApi();
+    const clientIp = '198.51.100.12';
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const response = await request(app).post('/api/v1/saccos/register').send({});
+      const response = await request(app)
+        .post('/api/v1/saccos/register')
+        .set('X-Forwarded-For', clientIp)
+        .send({});
       expect(response.status).toBe(400);
     }
 
-    const limited = await request(app).post('/api/v1/saccos/register').send({});
+    const limited = await request(app)
+      .post('/api/v1/saccos/register')
+      .set('X-Forwarded-For', clientIp)
+      .send({});
     expect(limited.status).toBe(429);
   });
 });
