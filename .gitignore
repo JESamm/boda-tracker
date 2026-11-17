@@ -1,0 +1,50 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.next
+.expo/
+.expo-export
+coverage
+*.tsbuildinfo
+apps/api/src/generated/prisma/
+**/.gradle/
+**/.cxx/
+**/*.keystore
+**/*.jks
+apps/rider-app/releases/*.apk
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Flutter build and IDE artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+android/local.properties
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

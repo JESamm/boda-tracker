@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: boda-tracker-api
+    runtime: node
+    region: singapore
+    plan: 0.5c-512mb
+    buildCommand: npm ci --include=dev && npm run build --workspace @boda-tracker/api
+    preDeployCommand: npm run db:deploy --workspace @boda-tracker/api
+    startCommand: npm run start --workspace @boda-tracker/api
+    healthCheckPath: /health/live
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: boda-tracker-postgres
+          property: connectionString
+      - key: AUTH_ACCESS_TOKEN_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        fromService:
+          name: boda-tracker-admin
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+
+  - type: web
+    name: boda-tracker-admin
+    runtime: node
+    region: singapore
+    plan: 0.5c-512mb
+    buildCommand: npm ci --include=dev && npm run build --workspace @boda-tracker/dashboard
+    startCommand: npm run start --workspace @boda-tracker/dashboard
+    healthCheckPath: /login
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_BASE_URL
+        fromService:
+          name: boda-tracker-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+
+databases:
+  - name: boda-tracker-postgres
+    databaseName: boda_tracker
+    user: boda_tracker
+    region: singapore
+    plan: 0.5c-1g

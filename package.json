@@ -1,0 +1,40 @@
+{
+  "name": "boda-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/api",
+    "apps/dashboard",
+    "apps/rider-app"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:dashboard\"",
+    "dev:api": "npm run dev --workspace @boda-tracker/api",
+    "dev:dashboard": "npm run dev --workspace @boda-tracker/dashboard",
+    "dev:rider": "npm run start --workspace @boda-tracker/rider-app",
+    "bundle:rider-android": "npm run export:android --workspace @boda-tracker/rider-app",
+    "build": "npm run build --workspace @boda-tracker/api && npm run build --workspace @boda-tracker/dashboard",
+    "lint": "oxlint apps/api/src apps/dashboard/app apps/rider-app",
+    "test": "npm run test --workspace @boda-tracker/api",
+    "typecheck": "npm run typecheck --workspace @boda-tracker/api && npm run typecheck --workspace @boda-tracker/dashboard && npm run typecheck --workspace @boda-tracker/rider-app",
+    "db:generate": "npm run db:generate --workspace @boda-tracker/api",
+    "db:validate": "npm run db:validate --workspace @boda-tracker/api",
+    "db:migrate": "npm run db:migrate --workspace @boda-tracker/api",
+    "db:deploy": "npm run db:deploy --workspace @boda-tracker/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "oxlint": "^1.88.0"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "esbuild@0.28.2": true,
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true
+  },
+  "dependencies": {
+    "expo": "~58.0.23",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  }
+}
