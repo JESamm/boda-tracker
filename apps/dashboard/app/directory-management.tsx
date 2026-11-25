@@ -15,7 +15,7 @@ interface DirectoryRecord {
   createdAt: string;
 }
 
-const emptyRiderForm = { fullName: '', phoneNumber: '', initialPassword: '' };
+const emptyRiderForm = { fullName: '', phoneNumber: '', email: '' };
 const emptyVehicleForm: { registrationNumber: string; type: 'MOTORCYCLE' | 'MATATU' } = {
   registrationNumber: '',
   type: 'MOTORCYCLE',
@@ -84,6 +84,11 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
       }
       if (!response.ok) {
         setError(result.error?.message ?? `Could not create ${type === 'riders' ? 'rider' : 'vehicle'}.`);
+        if (type === 'riders'
+          && ['RIDER_CREATED_EMAIL_FAILED', 'VERIFICATION_RATE_LIMITED'].includes(result.error?.code ?? '')) {
+          setRiderForm(emptyRiderForm);
+          await loadPage();
+        }
         return;
       }
       setRecords((current) => [result.data, ...(current ?? [])]);
@@ -91,7 +96,7 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
       setRiderForm(emptyRiderForm);
       setVehicleForm(emptyVehicleForm);
       setNotice(type === 'riders'
-        ? 'Rider account created. Share the login phone and initial password privately; they can sign in to the Boda-Tracker rider app.'
+        ? 'Rider account created and an activation code was sent by email. The rider can verify their email and set a password in the Boda-Tracker app.'
         : 'Vehicle registered to this SACCO.');
     } catch {
       setError('The request could not be confirmed. Check the directory before retrying.');
@@ -154,9 +159,9 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
               <input id="rider-name" maxLength={100} onChange={(event) => setRiderForm((current) => ({ ...current, fullName: event.target.value }))} required value={riderForm.fullName} />
               <label htmlFor="rider-phone">Login phone number</label>
               <input id="rider-phone" autoComplete="username" inputMode="tel" maxLength={20} onChange={(event) => setRiderForm((current) => ({ ...current, phoneNumber: event.target.value }))} placeholder="+254 7XX XXX XXX" required value={riderForm.phoneNumber} />
-              <label htmlFor="rider-password">Initial password</label>
-              <input id="rider-password" autoComplete="new-password" minLength={14} maxLength={128} onChange={(event) => setRiderForm((current) => ({ ...current, initialPassword: event.target.value }))} required type="password" value={riderForm.initialPassword} />
-              <p className="sacco-password-note">Use a unique password of at least 14 characters. Share it with the rider privately.</p>
+              <label htmlFor="rider-email">Email address</label>
+              <input id="rider-email" autoComplete="email" inputMode="email" maxLength={254} onChange={(event) => setRiderForm((current) => ({ ...current, email: event.target.value }))} required type="email" value={riderForm.email} />
+              <p className="sacco-password-note">The rider receives an email confirmation code and creates their own password in the app. Passwords are never sent by email or SMS.</p>
             </>
           ) : (
             <>

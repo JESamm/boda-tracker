@@ -8,6 +8,15 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   AUTH_ACCESS_TOKEN_SECRET: z.string().min(32).optional(),
   CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+  AFRICAS_TALKING_USERNAME: z.string().optional(),
+  AFRICAS_TALKING_API_KEY: z.string().optional(),
+  AFRICAS_TALKING_SENDER_ID: z.string().optional(),
+  BREVO_API_KEY: z.string().optional(),
+  BREVO_SENDER_EMAIL: z.preprocess(
+    (value) => typeof value === 'string' && !value.trim() ? undefined : value,
+    z.string().email().optional(),
+  ),
+  BREVO_SENDER_NAME: z.string().optional(),
 });
 
 export function loadEnv(environment: NodeJS.ProcessEnv = process.env) {

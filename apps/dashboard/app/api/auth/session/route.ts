@@ -82,6 +82,8 @@ interface SessionResponse {
     id: string;
     fullName: string;
     phoneNumber: string;
+    email: string | null;
+    emailVerified: boolean;
     role: string;
     saccoId: string | null;
     saccoName: string | null;

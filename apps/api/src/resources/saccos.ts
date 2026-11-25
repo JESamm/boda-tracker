@@ -1,6 +1,16 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { authenticateRequest, hashPassword, requireRoles, type AuthRepository, type AuthenticatedUser } from '../auth/auth.js';
+import {
+  authenticateRequest,
+  hashPassword,
+  issueEmailVerificationCode,
+  requireRoles,
+  VerificationRateLimitError,
+  type AuthAccount,
+  type AuthRepository,
+  type AuthenticatedUser,
+} from '../auth/auth.js';
+import type { EmailSender } from '../email/brevo.js';
 
 export interface ProvisionSaccoInput {
   name: string;
@@ -9,6 +19,7 @@ export interface ProvisionSaccoInput {
   operatingArea: string | null;
   adminFullName: string;
   adminPhoneNumber: string;
+  adminEmail: string;
   adminPasswordHash: string;
   actor?: AuthenticatedUser;
 }
@@ -25,6 +36,7 @@ export interface SaccoSummary {
     id: string;
     fullName: string;
     phoneNumber: string;
+    email: string | null;
   };
 }
 
@@ -43,6 +55,7 @@ const provisionSchema = z.object({
   operatingArea: z.string().trim().max(120).optional(),
   adminFullName: z.string().trim().min(2).max(100),
   adminPhoneNumber: z.string().trim().min(7).max(20),
+  adminEmail: z.string().trim().email().max(254),
   adminPassword: z.string().min(14).max(128),
 }).strict();
 
@@ -54,6 +67,7 @@ export function createSaccoRouter(
   authRepository: AuthRepository,
   saccoRepository: SaccoRepository,
   accessTokenSecret: string,
+  emailSender: EmailSender,
 ): Router {
   const router = Router();
   const authenticate = authenticateRequest(authRepository, accessTokenSecret);
@@ -83,17 +97,23 @@ export function createSaccoRouter(
     }
 
     try {
+      const adminPasswordHash = await hashPassword(input.data.adminPassword);
       const sacco = await saccoRepository.createSacco({
         ...normalized,
-        adminPasswordHash: await hashPassword(input.data.adminPassword),
+        adminPasswordHash,
       });
-      response.status(201).json({ data: sacco });
+      if (!await sendAdminVerification(sacco, adminPasswordHash, authRepository, emailSender, accessTokenSecret, response)) return;
+      response.status(201).json({
+        data: sacco,
+        verificationRequired: true,
+        message: 'A confirmation code has been sent to the administrator email.',
+      });
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         response.status(409).json({
           error: {
             code: 'ALREADY_EXISTS',
-            message: 'The SACCO registration, contact, or administrator phone number is already in use.',
+            message: 'The SACCO registration, contact, administrator phone number, or email is already in use.',
           },
         });
         return;
@@ -147,18 +167,31 @@ export function createSaccoRouter(
     }
 
     try {
+      const adminPasswordHash = await hashPassword(input.data.adminPassword);
       const sacco = await saccoRepository.createSacco({
         ...normalized,
-        adminPasswordHash: await hashPassword(input.data.adminPassword),
+        adminPasswordHash,
         actor,
       });
-      response.status(201).json({ data: sacco });
+      if (!await sendAdminVerification(
+        sacco,
+        adminPasswordHash,
+        authRepository,
+        emailSender,
+        accessTokenSecret,
+        response,
+      )) return;
+      response.status(201).json({
+        data: sacco,
+        verificationRequired: true,
+        message: 'A confirmation code has been sent to the administrator email.',
+      });
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         response.status(409).json({
           error: {
             code: 'ALREADY_EXISTS',
-            message: 'The SACCO registration, contact, or administrator phone number is already in use.',
+            message: 'The SACCO registration, contact, administrator phone number, or email is already in use.',
           },
         });
         return;
@@ -192,7 +225,51 @@ function normalizeProvisionInput(input: z.infer<typeof provisionSchema>) {
     operatingArea: input.operatingArea || null,
     adminFullName: input.adminFullName,
     adminPhoneNumber,
+    adminEmail: input.adminEmail.trim().toLowerCase(),
   };
+}
+
+async function sendAdminVerification(
+  sacco: SaccoSummary,
+  passwordHash: string,
+  authRepository: AuthRepository,
+  emailSender: EmailSender,
+  accessTokenSecret: string,
+  response: Response,
+): Promise<boolean> {
+  const account: AuthAccount = {
+    id: sacco.administrator.id,
+    fullName: sacco.administrator.fullName,
+    phoneNumber: sacco.administrator.phoneNumber,
+    email: sacco.administrator.email,
+    emailVerifiedAt: null,
+    role: 'SACCO_ADMIN',
+    saccoId: sacco.id,
+    saccoName: sacco.name,
+    saccoStatus: sacco.status,
+    status: 'ACTIVE',
+    passwordHash,
+  };
+  try {
+    await issueEmailVerificationCode(authRepository, emailSender, account, 'EMAIL_VERIFICATION', accessTokenSecret);
+    return true;
+  } catch (error) {
+    const rateLimited = error instanceof VerificationRateLimitError;
+    if (!rateLimited) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'SACCO administrator confirmation email delivery failed',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      }));
+    }
+    response.status(rateLimited ? 429 : 503).json({
+      error: {
+        code: rateLimited ? 'VERIFICATION_RATE_LIMITED' : 'ACCOUNT_CREATED_EMAIL_FAILED',
+        message: 'The SACCO was created, but the administrator confirmation email could not be sent. Request a new code after email delivery is configured.',
+      },
+    });
+    return false;
+  }
 }
 
 function normalizeKenyanPhoneNumber(value: string): string | null {

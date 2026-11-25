@@ -241,6 +241,8 @@ button, input { font: inherit; }
 .login-submit { display: flex; min-height: 41px; align-items: center; justify-content: center; gap: 8px; margin-top: 9px; border: 0; border-radius: 6px; background: var(--green); color: white; font-size: 11px; font-weight: 700; cursor: pointer; }
 .login-submit:hover { background: var(--green-dark); }
 .login-submit:disabled { cursor: wait; opacity: .7; }
+.login-secondary { min-height: 36px; border: 0; background: transparent; color: var(--green-dark); font-size: 11px; font-weight: 700; cursor: pointer; }
+.login-secondary:disabled { cursor: wait; opacity: .7; }
 .login-help { margin: 5px 0 0; color: #99a39b; font-size: 10px; text-align: center; }
 .login-help a, .auth-page-link { color: var(--green); font-weight: 700; }
 .login-help a:hover, .auth-page-link:hover { text-decoration: underline; }

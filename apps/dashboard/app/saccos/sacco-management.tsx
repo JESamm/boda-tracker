@@ -13,6 +13,7 @@ interface SaccoRecord {
   administrator: {
     fullName: string;
     phoneNumber: string;
+    email: string | null;
   };
 }
 
@@ -23,6 +24,7 @@ const initialForm = {
   operatingArea: '',
   adminFullName: '',
   adminPhoneNumber: '',
+  adminEmail: '',
   adminPassword: '',
 };
 
@@ -82,7 +84,7 @@ export function SaccoManagement() {
       }
       setSaccos((current) => [result.data, ...current]);
       setForm(initialForm);
-      setNotice('SACCO and its initial administrator were created.');
+      setNotice('SACCO and its initial administrator were created. A confirmation code was sent to the administrator email.');
     } catch {
       setError('The SACCO service is unavailable. Your entry was not confirmed; check before retrying.');
     } finally {
@@ -117,7 +119,7 @@ export function SaccoManagement() {
                 <div className="sacco-record-main">
                   <strong>{sacco.name}</strong>
                   <span>{sacco.registrationNumber ?? 'Registration pending'}{sacco.operatingArea ? ` · ${sacco.operatingArea}` : ''}</span>
-                  <span>Admin: {sacco.administrator.fullName} · {sacco.administrator.phoneNumber}</span>
+                  <span>Admin: {sacco.administrator.fullName} · {sacco.administrator.email ?? 'Email not provided'} · {sacco.administrator.phoneNumber}</span>
                 </div>
                 <span className={`sacco-status ${sacco.status === 'ACTIVE' ? 'active' : ''}`}>{sacco.status}</span>
               </article>
@@ -153,6 +155,8 @@ export function SaccoManagement() {
           <input id="admin-name" maxLength={100} onChange={(event) => updateField('adminFullName', event.target.value)} required value={form.adminFullName} />
           <label htmlFor="admin-phone">Login phone number</label>
           <input id="admin-phone" autoComplete="username" inputMode="tel" maxLength={20} onChange={(event) => updateField('adminPhoneNumber', event.target.value)} placeholder="+254 7XX XXX XXX" required value={form.adminPhoneNumber} />
+          <label htmlFor="admin-email">Email address (primary login)</label>
+          <input id="admin-email" autoComplete="email" inputMode="email" maxLength={254} onChange={(event) => updateField('adminEmail', event.target.value)} required type="email" value={form.adminEmail} />
           <label htmlFor="admin-password">Initial password</label>
           <input id="admin-password" autoComplete="new-password" minLength={14} maxLength={128} onChange={(event) => updateField('adminPassword', event.target.value)} required type="password" value={form.adminPassword} />
           <p className="sacco-password-note">Use a unique 14+ character password and deliver it to the administrator privately.</p>

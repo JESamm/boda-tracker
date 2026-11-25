@@ -17,6 +17,12 @@ services:
         sync: false
       - key: AUTH_ACCESS_TOKEN_SECRET
         generateValue: true
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        value: Boda-Tracker
       - key: CORS_ALLOWED_ORIGINS
         fromService:
           name: boda-tracker-admin

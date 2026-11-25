@@ -26,4 +26,16 @@ describe('API environment validation', () => {
     expect(first.AUTH_ACCESS_TOKEN_SECRET).not.toBe(second.AUTH_ACCESS_TOKEN_SECRET);
   });
 
+  it('accepts empty optional Brevo values in the environment example', () => {
+    const env = loadEnv({
+      APP_ENV: 'development',
+      DATABASE_URL: databaseUrl,
+      BREVO_API_KEY: '',
+      BREVO_SENDER_EMAIL: '',
+      BREVO_SENDER_NAME: 'Boda-Tracker',
+    });
+
+    expect(env.BREVO_SENDER_EMAIL).toBeUndefined();
+  });
+
 });

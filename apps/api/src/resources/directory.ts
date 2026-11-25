@@ -1,16 +1,22 @@
 import { Router, type Request, type Response } from 'express';
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import {
   authenticateRequest,
   hashPassword,
+  issueEmailVerificationCode,
   requireRoles,
+  VerificationRateLimitError,
+  type AuthAccount,
   type AuthRepository,
 } from '../auth/auth.js';
+import type { EmailSender } from '../email/brevo.js';
 
 export interface RiderSummary {
   id: string;
   fullName: string;
   phoneNumber: string;
+  email: string | null;
   status: 'ACTIVE' | 'SUSPENDED' | 'INVITED';
   createdAt: Date;
 }
@@ -31,6 +37,7 @@ export interface DirectoryPage<T> {
 export interface CreateRiderInput {
   fullName: string;
   phoneNumber: string;
+  email: string;
   passwordHash: string;
   saccoId: string;
   actorUserId: string;
@@ -59,7 +66,7 @@ const listSchema = z.object({
 const createRiderSchema = z.object({
   fullName: z.string().trim().min(2).max(100),
   phoneNumber: z.string().trim().min(7).max(20),
-  initialPassword: z.string().min(14).max(128),
+  email: z.string().trim().email().max(254),
 }).strict();
 
 const createVehicleSchema = z.object({
@@ -71,6 +78,7 @@ export function createDirectoryRouter(
   authRepository: AuthRepository,
   directoryRepository: DirectoryRepository,
   accessTokenSecret: string,
+  emailSender: EmailSender,
 ): Router {
   const router = Router();
   const authenticate = authenticateRequest(authRepository, accessTokenSecret);
@@ -98,7 +106,7 @@ export function createDirectoryRouter(
       response.status(400).json({
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Provide a rider name, Kenyan phone number, and initial password of at least 14 characters.',
+          message: 'Provide a rider name, Kenyan phone number, and valid email address.',
         },
       });
       return;
@@ -116,18 +124,48 @@ export function createDirectoryRouter(
     }
 
     try {
+      const passwordHash = await hashPassword(randomBytes(32).toString('base64url'));
       const rider = await directoryRepository.createRider({
         fullName: input.data.fullName,
         phoneNumber,
-        passwordHash: await hashPassword(input.data.initialPassword),
+        email: input.data.email.trim().toLowerCase(),
+        passwordHash,
         saccoId: actor.saccoId,
         actorUserId: actor.id,
       });
+      const account: AuthAccount = {
+        ...rider,
+        emailVerifiedAt: null,
+        role: 'RIDER',
+        saccoId: actor.saccoId,
+        saccoName: actor.saccoName,
+        saccoStatus: 'ACTIVE',
+        passwordHash,
+      };
+      try {
+        await issueEmailVerificationCode(authRepository, emailSender, account, 'EMAIL_VERIFICATION', accessTokenSecret);
+      } catch (error) {
+        const rateLimited = error instanceof VerificationRateLimitError;
+        if (!rateLimited) {
+          console.error(JSON.stringify({
+            level: 'error',
+            message: 'Rider activation email delivery failed',
+            errorType: error instanceof Error ? error.name : 'UnknownError',
+          }));
+        }
+        response.status(rateLimited ? 429 : 503).json({
+          error: {
+            code: rateLimited ? 'VERIFICATION_RATE_LIMITED' : 'RIDER_CREATED_EMAIL_FAILED',
+            message: 'The rider account was created, but the activation email could not be sent. The rider can request a new code in the app.',
+          },
+        });
+        return;
+      }
       response.status(201).json({ data: rider });
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         response.status(409).json({
-          error: { code: 'ALREADY_EXISTS', message: 'A user with that phone number already exists.' },
+          error: { code: 'ALREADY_EXISTS', message: 'A user with that phone number or email already exists.' },
         });
         return;
       }

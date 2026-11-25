@@ -64,6 +64,7 @@ async function promptHidden(question: string): Promise<string> {
 async function main() {
   const fullName = await prompt('New administrator name: ');
   const phoneNumber = await prompt('New administrator phone (+254...): ');
+  const email = (await prompt('New administrator email: ')).toLowerCase();
   const password = await promptHidden('New password (hidden): ');
   const passwordConfirmation = await promptHidden('Confirm password (hidden): ');
 
@@ -72,6 +73,9 @@ async function main() {
   }
   if (!/^\+254[17]\d{8}$/.test(phoneNumber)) {
     throw new Error('Enter the phone number in Kenyan E.164 format, such as +254712345678.');
+  }
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Enter a valid administrator email address.');
   }
   if (password.length < 14 || password.length > 128) {
     throw new Error('Use a unique password between 14 and 128 characters.');
@@ -104,7 +108,7 @@ async function main() {
 
     await transaction.user.update({
       where: { id: admin.id },
-      data: { fullName, phoneNumber, passwordHash },
+      data: { fullName, phoneNumber, email, emailVerifiedAt: new Date(), passwordHash },
     });
     await transaction.refreshToken.updateMany({
       where: { userId: admin.id, revokedAt: null },

@@ -3,6 +3,7 @@ import { hashPassword } from '../auth/auth.js';
 
 const fullName = process.env.BOOTSTRAP_ADMIN_NAME?.trim();
 const phoneNumber = process.env.BOOTSTRAP_ADMIN_PHONE?.trim();
+const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
 const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 
 async function main() {
@@ -11,6 +12,9 @@ async function main() {
   }
   if (!phoneNumber || !/^\+254[17]\d{8}$/.test(phoneNumber)) {
     throw new BootstrapInputError('Set BOOTSTRAP_ADMIN_PHONE in Kenyan E.164 format, for example +254712345678.');
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    throw new BootstrapInputError('Set BOOTSTRAP_ADMIN_EMAIL to a valid administrator email address.');
   }
   if (!password || password.length < 14 || password.length > 128) {
     throw new BootstrapInputError('Set BOOTSTRAP_ADMIN_PASSWORD to a unique password between 14 and 128 characters.');
@@ -28,6 +32,8 @@ async function main() {
       data: {
         fullName,
         phoneNumber,
+        email,
+        emailVerifiedAt: new Date(),
         passwordHash,
         role: 'PLATFORM_ADMIN',
         status: 'ACTIVE',

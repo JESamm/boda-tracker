@@ -57,6 +57,8 @@ type RiderUser = {
   id: string;
   fullName: string;
   phoneNumber: string;
+  email: string | null;
+  emailVerified: boolean;
   role: 'PLATFORM_ADMIN' | 'SACCO_ADMIN' | 'RIDER';
   saccoId: string | null;
   saccoName: string | null;
@@ -68,6 +70,9 @@ type AuthSession = {
   expiresIn: number;
   user: RiderUser;
 };
+
+type LoginStep = 'credentials' | 'login-code' | 'activation-email' | 'activation-code';
+type LoginMethod = 'email' | 'phone';
 
 type Tab = 'Today' | 'Trips' | 'Maps' | 'Account';
 
@@ -132,7 +137,21 @@ export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>('email');
+  const [loginStep, setLoginStep] = useState<LoginStep>('credentials');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
+  const [isPasswordChangeRequested, setIsPasswordChangeRequested] = useState(false);
+  const [passwordChangeCode, setPasswordChangeCode] = useState('');
+  const [passwordChangePassword, setPasswordChangePassword] = useState('');
+  const [passwordChangeNotice, setPasswordChangeNotice] = useState('');
+  const [emailUpdate, setEmailUpdate] = useState('');
+  const [emailUpdateCode, setEmailUpdateCode] = useState('');
+  const [isEmailUpdateCodeRequested, setIsEmailUpdateCodeRequested] = useState(false);
+  const [emailUpdateNotice, setEmailUpdateNotice] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('Today');
@@ -212,18 +231,40 @@ export default function App() {
 
   async function signIn() {
     setError('');
+    setLoginNotice('');
     setIsSubmitting(true);
     try {
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ phoneNumber, password }),
+        body: JSON.stringify(loginMethod === 'email' ? { email, password } : { phoneNumber, password }),
       });
       const result = await response.json() as AuthResponse;
-      if (!response.ok || !result.user || !result.accessToken || !result.refreshToken) {
-        setError(result.error?.message ?? 'Sign-in failed. Check your phone number and password.');
+      if (response.status === 202 && result.verificationRequired) {
+        setLoginStep('login-code');
+        setVerificationCode('');
+        setLoginNotice(result.verificationChannel === 'email'
+          ? 'A verification code has been sent to your email.'
+          : 'A verification code has been sent to your phone.');
         return;
       }
+      if (!response.ok || !result.user || !result.accessToken || !result.refreshToken) {
+        setError(result.error?.message ?? 'Sign-in failed. Check your email or phone number and password.');
+        return;
+      }
+      await acceptSession(result);
+    } catch {
+      setError(`Could not reach the sign-in service at ${apiBaseUrl}. Check the phone connection and try again.`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function acceptSession(result: AuthResponse) {
+    if (!result.user || !result.accessToken || !result.refreshToken) {
+      setError('Sign-in did not return a valid session. Please try again.');
+      return;
+    }
       if (result.user.role !== 'RIDER') {
         await fetch(`${apiBaseUrl}/auth/logout`, {
           method: 'POST',
@@ -240,9 +281,215 @@ export default function App() {
       setIsTripsLoading(true);
       setTrips([]);
       setPassword('');
+      setVerificationCode('');
+      setLoginStep('credentials');
       setActiveTab('Today');
+  }
+
+  async function verifyLoginCode() {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const emailLogin = loginMethod === 'email';
+      const response = await fetch(`${apiBaseUrl}/auth/login/${emailLogin ? 'email/verify' : 'verify'}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ [emailLogin ? 'email' : 'phoneNumber']: emailLogin ? email : phoneNumber, code: verificationCode }),
+      });
+      const result = await response.json() as AuthResponse;
+      if (!response.ok) {
+        setError(result.error?.message ?? 'The code could not be verified. Request a new code and try again.');
+        return;
+      }
+      await acceptSession(result);
     } catch {
-      setError(`Could not reach the sign-in service at ${apiBaseUrl}. Check the phone connection and try again.`);
+      setError('Could not reach the verification service. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function requestActivationCode() {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/email/verification/request`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const result = await response.json() as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not request an activation code. Try again later.');
+        return;
+      }
+      setLoginStep('activation-code');
+      setVerificationCode('');
+      setLoginNotice('If this email has an invited rider account, an activation code has been sent.');
+    } catch {
+      setError('Could not reach the activation service. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function completeActivation() {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/activation/email/complete`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, code: verificationCode, password: newPassword }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not activate this account. Check the code and try again.');
+        return;
+      }
+      setLoginStep('credentials');
+      setPassword('');
+      setVerificationCode('');
+      setNewPassword('');
+      setLoginNotice('Your password is set. Sign in to continue.');
+    } catch {
+      setError('Could not reach the activation service. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function requestPasswordChangeCode() {
+    if (!session) return;
+    setError('');
+    setPasswordChangeNotice('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/password/change/request`, {
+        method: 'POST',
+        headers: { authorization: ['Bearer', session.accessToken].join(' ') },
+      });
+      const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not send a password verification code.');
+        return;
+      }
+      setIsPasswordChangeRequested(true);
+      setPasswordChangeCode('');
+      setPasswordChangeNotice('A password verification code has been sent to your phone.');
+    } catch {
+      setError('Could not reach the password service. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function completePasswordChange() {
+    if (!session) return;
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/password/change/complete`, {
+        method: 'POST',
+        headers: {
+          authorization: ['Bearer', session.accessToken].join(' '),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ code: passwordChangeCode, password: passwordChangePassword }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not change your password. Check the code and try again.');
+        return;
+      }
+      await SecureStore.deleteItemAsync(sessionStorageKey);
+      setSession(null);
+      setRiderWorkspace(null);
+      setIsWorkspaceLoading(false);
+      setTrips([]);
+      setIsTripsLoading(false);
+      setPassword('');
+      setPasswordChangePassword('');
+      setIsPasswordChangeRequested(false);
+      setPasswordChangeNotice('');
+      setLoginNotice('Password updated. Sign in with your new password and verify your phone.');
+    } catch {
+      setError('Could not reach the password service. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function requestEmailConfirmation() {
+    if (!session) return;
+    setError('');
+    setEmailUpdateNotice('');
+    setIsSubmitting(true);
+    try {
+      const addingEmail = !session.user.email && !isEmailUpdateCodeRequested;
+      const emailToConfirm = session.user.email ?? emailUpdate.trim().toLowerCase();
+      const response = await fetch(
+        `${apiBaseUrl}/auth/${addingEmail ? 'email/add' : 'email/verification/request'}`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(addingEmail ? { authorization: `Bearer ${session.accessToken}` } : {}),
+          },
+          body: JSON.stringify({ email: emailToConfirm }),
+        },
+      );
+      const result = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+      if (!response.ok) {
+        if (addingEmail
+          && ['EMAIL_UPDATE_DELIVERY_FAILED', 'VERIFICATION_RATE_LIMITED'].includes(result.error?.code ?? '')) {
+          const updatedSession: AuthSession = {
+            ...session,
+            user: { ...session.user, email: emailToConfirm, emailVerified: false },
+          };
+          await SecureStore.setItemAsync(sessionStorageKey, JSON.stringify(updatedSession));
+          setSession(updatedSession);
+        }
+        setError(result.error?.message ?? 'Could not send an email confirmation code.');
+        return;
+      }
+      setEmailUpdate(emailToConfirm);
+      setEmailUpdateCode('');
+      setIsEmailUpdateCodeRequested(true);
+      setEmailUpdateNotice(`A confirmation code was sent to ${emailToConfirm}.`);
+    } catch {
+      setError('Could not reach the email confirmation service. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function confirmAccountEmail() {
+    if (!session) return;
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/email/verify`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: emailUpdate, code: emailUpdateCode }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'The code is invalid or expired. Request another code.');
+        return;
+      }
+      const updatedSession: AuthSession = {
+        ...session,
+        user: { ...session.user, email: emailUpdate, emailVerified: true },
+      };
+      await SecureStore.setItemAsync(sessionStorageKey, JSON.stringify(updatedSession));
+      setSession(updatedSession);
+      setIsEmailUpdateCodeRequested(false);
+      setEmailUpdateCode('');
+      setEmailUpdateNotice('Your email is confirmed and ready for email sign-in.');
+    } catch {
+      setError('Could not reach the email confirmation service. Check your connection and try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -381,12 +628,26 @@ export default function App() {
     return (
       <LoginScreen
         error={error}
+        loginNotice={loginNotice}
+        loginStep={loginStep}
         isSubmitting={isSubmitting}
         password={password}
+        email={email}
+        loginMethod={loginMethod}
+        setEmail={setEmail}
+        setLoginMethod={setLoginMethod}
         phoneNumber={phoneNumber}
         setPassword={setPassword}
         setPhoneNumber={setPhoneNumber}
+        newPassword={newPassword}
+        setNewPassword={setNewPassword}
+        verificationCode={verificationCode}
+        setVerificationCode={setVerificationCode}
+        setLoginStep={setLoginStep}
         signIn={() => void signIn()}
+        verifyLoginCode={() => void verifyLoginCode()}
+        requestActivationCode={() => void requestActivationCode()}
+        completeActivation={() => void completeActivation()}
       />
     );
   }
@@ -440,7 +701,30 @@ export default function App() {
           <AccountScreen
             error={error}
             isSubmitting={isSubmitting}
+            isPasswordChangeRequested={isPasswordChangeRequested}
+            passwordChangeCode={passwordChangeCode}
+            passwordChangePassword={passwordChangePassword}
+            passwordChangeNotice={passwordChangeNotice}
+            emailUpdate={emailUpdate}
+            emailUpdateCode={emailUpdateCode}
+            emailUpdateNotice={emailUpdateNotice}
+            isEmailUpdateCodeRequested={isEmailUpdateCodeRequested}
             session={session}
+            requestPasswordChangeCode={() => void requestPasswordChangeCode()}
+            completePasswordChange={() => void completePasswordChange()}
+            setPasswordChangeCode={setPasswordChangeCode}
+            setPasswordChangePassword={setPasswordChangePassword}
+            setEmailUpdate={setEmailUpdate}
+            setEmailUpdateCode={setEmailUpdateCode}
+            requestEmailConfirmation={() => void requestEmailConfirmation()}
+            confirmAccountEmail={() => void confirmAccountEmail()}
+            cancelPasswordChange={() => {
+              setIsPasswordChangeRequested(false);
+              setPasswordChangeCode('');
+              setPasswordChangePassword('');
+              setPasswordChangeNotice('');
+              setError('');
+            }}
             signOut={() => void signOut()}
           />
         )}
@@ -478,20 +762,48 @@ export default function App() {
 
 function LoginScreen({
   error,
+  loginNotice,
+  loginStep,
   isSubmitting,
   password,
+  email,
+  loginMethod,
+  newPassword,
   phoneNumber,
+  verificationCode,
+  setLoginStep,
+  setEmail,
+  setLoginMethod,
+  setNewPassword,
   setPassword,
   setPhoneNumber,
+  setVerificationCode,
   signIn,
+  verifyLoginCode,
+  requestActivationCode,
+  completeActivation,
 }: {
   error: string;
+  loginNotice: string;
+  loginStep: LoginStep;
   isSubmitting: boolean;
   password: string;
+  email: string;
+  loginMethod: LoginMethod;
+  newPassword: string;
   phoneNumber: string;
+  verificationCode: string;
+  setLoginStep: (step: LoginStep) => void;
+  setNewPassword: (value: string) => void;
   setPassword: (value: string) => void;
   setPhoneNumber: (value: string) => void;
+  setEmail: (value: string) => void;
+  setLoginMethod: (method: LoginMethod) => void;
+  setVerificationCode: (value: string) => void;
   signIn: () => void;
+  verifyLoginCode: () => void;
+  requestActivationCode: () => void;
+  completeActivation: () => void;
 }) {
   return (
     <SafeAreaView style={styles.loginScreen}>
@@ -508,59 +820,214 @@ function LoginScreen({
 
           <View style={styles.loginIntro}>
             <Text style={styles.eyebrow}>RIDER APP · KENYA</Text>
-            <Text style={styles.loginTitle}>Your day starts here.</Text>
+            <Text style={styles.loginTitle}>
+              {loginStep === 'credentials'
+                ? 'Your day starts here.'
+                : loginStep.startsWith('activation')
+                  ? 'Activate your account.'
+                  : `Verify your ${loginMethod === 'email' ? 'email' : 'phone'}.`}
+            </Text>
             <Text style={styles.loginDescription}>
-              Sign in with the phone number and password your SACCO administrator gave you. Rider accounts created in the SACCO portal work here.
+              {loginStep === 'credentials'
+                ? loginMethod === 'email'
+                  ? 'Sign in with your email and password. A verification code will be sent to your email.'
+                  : 'Sign in with your phone number and password. A verification code will be sent to your phone.'
+                : loginStep.startsWith('activation')
+                  ? 'Set up your rider account using the activation code sent to your email.'
+                  : `Enter the six-digit code sent to your ${loginMethod === 'email' ? 'email' : 'phone'} to finish signing in.`}
             </Text>
           </View>
 
           <View style={styles.loginCard}>
-            <Text style={styles.fieldLabel}>Phone number</Text>
-            <TextInput
-              accessibilityLabel="Phone number"
-              autoComplete="tel"
-              autoCapitalize="none"
-              keyboardType="phone-pad"
-              onChangeText={setPhoneNumber}
-              placeholder="+254 7XX XXX XXX"
-              placeholderTextColor={colors.muted}
-              style={styles.input}
-              value={phoneNumber}
-            />
-            <Text style={[styles.fieldLabel, styles.passwordLabel]}>Password</Text>
-            <TextInput
-              accessibilityLabel="Password"
-              autoCapitalize="none"
-              autoComplete="current-password"
-              onChangeText={setPassword}
-              onSubmitEditing={signIn}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.muted}
-              secureTextEntry
-              style={styles.input}
-              value={password}
-            />
+            {(loginStep === 'credentials' || loginStep === 'activation-email') && (
+              <>
+                {loginStep === 'activation-email' || loginMethod === 'email' ? (
+                  <>
+                    <Text style={styles.fieldLabel}>Email address</Text>
+                    <TextInput
+                      accessibilityLabel="Email address"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      onChangeText={setEmail}
+                      placeholder="name@example.com"
+                      placeholderTextColor={colors.muted}
+                      style={styles.input}
+                      value={email}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.fieldLabel}>Phone number</Text>
+                    <TextInput
+                      accessibilityLabel="Phone number"
+                      autoComplete="tel"
+                      autoCapitalize="none"
+                      keyboardType="phone-pad"
+                      onChangeText={setPhoneNumber}
+                      placeholder="+254 7XX XXX XXX"
+                      placeholderTextColor={colors.muted}
+                      style={styles.input}
+                      value={phoneNumber}
+                    />
+                  </>
+                )}
+              </>
+            )}
+            {loginStep === 'credentials' && (
+              <>
+                <Text style={[styles.fieldLabel, styles.passwordLabel]}>Password</Text>
+                <TextInput
+                  accessibilityLabel="Password"
+                  autoCapitalize="none"
+                  autoComplete="current-password"
+                  onChangeText={setPassword}
+                  onSubmitEditing={signIn}
+                  placeholder="Enter your password"
+                  placeholderTextColor={colors.muted}
+                  secureTextEntry
+                  style={styles.input}
+                  value={password}
+                />
+              </>
+            )}
+            {(loginStep === 'login-code' || loginStep === 'activation-code') && (
+              <>
+                <Text style={styles.fieldLabel}>Six-digit code</Text>
+                <TextInput
+                  accessibilityLabel="Six-digit verification code"
+                  autoComplete="one-time-code"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  onChangeText={setVerificationCode}
+                  placeholder="000000"
+                  placeholderTextColor={colors.muted}
+                  style={styles.input}
+                  value={verificationCode}
+                />
+              </>
+            )}
+            {loginStep === 'activation-code' && (
+              <>
+                <Text style={[styles.fieldLabel, styles.passwordLabel]}>Create a password</Text>
+                <TextInput
+                  accessibilityLabel="Create a password"
+                  autoCapitalize="none"
+                  autoComplete="new-password"
+                  maxLength={128}
+                  onChangeText={setNewPassword}
+                  placeholder="At least 14 characters"
+                  placeholderTextColor={colors.muted}
+                  secureTextEntry
+                  style={styles.input}
+                  value={newPassword}
+                />
+              </>
+            )}
+            {loginNotice ? <Text style={styles.loginNotice}>{loginNotice}</Text> : null}
             {error ? <Text accessibilityRole="alert" style={styles.loginError}>{error}</Text> : null}
-            <Pressable
-              accessibilityRole="button"
-              disabled={isSubmitting || !phoneNumber.trim() || !password}
-              onPress={signIn}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                (isSubmitting || !phoneNumber.trim() || !password) && styles.buttonDisabled,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              {isSubmitting
-                ? <ActivityIndicator color={colors.white} />
-                : <Text style={styles.primaryButtonText}>Sign in  →</Text>}
-            </Pressable>
-            <Text style={styles.loginHelp}>Need access? Contact your SACCO administrator.</Text>
+            {loginStep === 'credentials' && (
+              <>
+                <LoginAction
+                  label="Sign in  →"
+                  disabled={isSubmitting || !(loginMethod === 'email' ? email.trim() : phoneNumber.trim()) || !password}
+                  isSubmitting={isSubmitting}
+                  onPress={signIn}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setLoginMethod(loginMethod === 'email' ? 'phone' : 'email')}
+                  style={styles.loginSecondaryButton}
+                >
+                  <Text style={styles.loginSecondaryText}>
+                    {loginMethod === 'email' ? 'Use phone number instead' : 'Use email instead'}
+                  </Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => setLoginStep('activation-email')} style={styles.loginSecondaryButton}>
+                  <Text style={styles.loginSecondaryText}>Activate a new rider account</Text>
+                </Pressable>
+                <Text style={styles.loginHelp}>Email sign-in is preferred. Phone sign-in remains available.</Text>
+              </>
+            )}
+            {loginStep === 'login-code' && (
+              <>
+                <LoginAction
+                  label="Verify and sign in"
+                  disabled={isSubmitting || verificationCode.length !== 6}
+                  isSubmitting={isSubmitting}
+                  onPress={verifyLoginCode}
+                />
+                <Pressable accessibilityRole="button" disabled={isSubmitting} onPress={signIn} style={styles.loginSecondaryButton}>
+                  <Text style={styles.loginSecondaryText}>Resend code</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => { setLoginStep('credentials'); setVerificationCode(''); }} style={styles.loginSecondaryButton}>
+                  <Text style={styles.loginSecondaryText}>Back to sign in</Text>
+                </Pressable>
+              </>
+            )}
+            {loginStep === 'activation-email' && (
+              <>
+                <LoginAction
+                  label="Send activation code"
+                  disabled={isSubmitting || !email.trim()}
+                  isSubmitting={isSubmitting}
+                  onPress={requestActivationCode}
+                />
+                <Pressable accessibilityRole="button" onPress={() => setLoginStep('credentials')} style={styles.loginSecondaryButton}>
+                  <Text style={styles.loginSecondaryText}>Back to sign in</Text>
+                </Pressable>
+              </>
+            )}
+            {loginStep === 'activation-code' && (
+              <>
+                <LoginAction
+                  label="Set password and continue"
+                  disabled={isSubmitting || verificationCode.length !== 6 || newPassword.length < 14}
+                  isSubmitting={isSubmitting}
+                  onPress={completeActivation}
+                />
+                <Pressable accessibilityRole="button" disabled={isSubmitting} onPress={requestActivationCode} style={styles.loginSecondaryButton}>
+                  <Text style={styles.loginSecondaryText}>Resend activation code</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => setLoginStep('credentials')} style={styles.loginSecondaryButton}>
+                  <Text style={styles.loginSecondaryText}>Back to sign in</Text>
+                </Pressable>
+              </>
+            )}
           </View>
           <Text style={styles.loginFooter}>Secure access for your transport workday</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function LoginAction({
+  label,
+  disabled,
+  isSubmitting,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  isSubmitting: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        disabled && styles.buttonDisabled,
+        pressed && styles.buttonPressed,
+      ]}
+    >
+      {isSubmitting
+        ? <ActivityIndicator color={colors.white} />
+        : <Text style={styles.primaryButtonText}>{label}</Text>}
+    </Pressable>
   );
 }
 
@@ -1267,12 +1734,46 @@ function MapsScreen({
 function AccountScreen({
   error,
   isSubmitting,
+  isPasswordChangeRequested,
+  passwordChangeCode,
+  passwordChangePassword,
+  passwordChangeNotice,
+  emailUpdate,
+  emailUpdateCode,
+  emailUpdateNotice,
+  isEmailUpdateCodeRequested,
   session,
+  requestPasswordChangeCode,
+  completePasswordChange,
+  setPasswordChangeCode,
+  setPasswordChangePassword,
+  setEmailUpdate,
+  setEmailUpdateCode,
+  requestEmailConfirmation,
+  confirmAccountEmail,
+  cancelPasswordChange,
   signOut,
 }: {
   error: string;
   isSubmitting: boolean;
+  isPasswordChangeRequested: boolean;
+  passwordChangeCode: string;
+  passwordChangePassword: string;
+  passwordChangeNotice: string;
+  emailUpdate: string;
+  emailUpdateCode: string;
+  emailUpdateNotice: string;
+  isEmailUpdateCodeRequested: boolean;
   session: AuthSession;
+  requestPasswordChangeCode: () => void;
+  completePasswordChange: () => void;
+  setPasswordChangeCode: (value: string) => void;
+  setPasswordChangePassword: (value: string) => void;
+  setEmailUpdate: (value: string) => void;
+  setEmailUpdateCode: (value: string) => void;
+  requestEmailConfirmation: () => void;
+  confirmAccountEmail: () => void;
+  cancelPasswordChange: () => void;
   signOut: () => void;
 }) {
   return (
@@ -1290,11 +1791,129 @@ function AccountScreen({
         <Text style={styles.profileRole}>RIDER ACCOUNT</Text>
       </View>
       <View style={styles.detailsCard}>
+        <DetailRow label="Email" value={session.user.email ?? 'Not set'} />
+        <View style={styles.detailDivider} />
         <DetailRow label="Phone number" value={session.user.phoneNumber} />
         <View style={styles.detailDivider} />
         <DetailRow label="SACCO" value={session.user.saccoName ?? 'Not linked'} />
         <View style={styles.detailDivider} />
         <DetailRow label="Account status" value="Active" />
+      </View>
+      <View style={styles.passwordChangeCard}>
+        <Text style={styles.fieldLabel}>Email sign-in</Text>
+        <Text style={styles.passwordChangeDescription}>
+          {session.user.emailVerified
+            ? 'Your email is confirmed. Use it as your preferred sign-in method.'
+            : 'Confirm your email to use it as the preferred sign-in method.'}
+        </Text>
+        {emailUpdateNotice ? <Text style={styles.loginNotice}>{emailUpdateNotice}</Text> : null}
+        {!session.user.email && !isEmailUpdateCodeRequested && (
+          <TextInput
+            accessibilityLabel="Email address"
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            onChangeText={setEmailUpdate}
+            placeholder="name@example.com"
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+            value={emailUpdate}
+          />
+        )}
+        {isEmailUpdateCodeRequested && (
+          <TextInput
+            accessibilityLabel="Email confirmation code"
+            autoComplete="one-time-code"
+            keyboardType="number-pad"
+            maxLength={6}
+            onChangeText={setEmailUpdateCode}
+            placeholder="Six-digit code"
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+            value={emailUpdateCode}
+          />
+        )}
+        {!session.user.emailVerified && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isSubmitting || (isEmailUpdateCodeRequested && emailUpdateCode.length !== 6) || (!session.user.email && !emailUpdate.trim())}
+            onPress={isEmailUpdateCodeRequested ? confirmAccountEmail : requestEmailConfirmation}
+            style={({ pressed }) => [styles.passwordChangeButton, pressed && styles.buttonPressed]}
+          >
+            {isSubmitting
+              ? <ActivityIndicator color={colors.primary} />
+              : <Text style={styles.passwordChangeButtonText}>
+                {isEmailUpdateCodeRequested ? 'Confirm email' : session.user.email ? 'Send confirmation code' : 'Add email and send code'}
+              </Text>}
+          </Pressable>
+        )}
+        {isEmailUpdateCodeRequested && (
+          <Pressable accessibilityRole="button" disabled={isSubmitting} onPress={requestEmailConfirmation} style={styles.loginSecondaryButton}>
+            <Text style={styles.loginSecondaryText}>Resend code</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.passwordChangeCard}>
+        <Text style={styles.fieldLabel}>Password security</Text>
+        <Text style={styles.passwordChangeDescription}>
+          Confirm the code sent to your phone before changing your password.
+        </Text>
+        {passwordChangeNotice ? <Text style={styles.loginNotice}>{passwordChangeNotice}</Text> : null}
+        {isPasswordChangeRequested ? (
+          <>
+            <TextInput
+              accessibilityLabel="Password verification code"
+              autoComplete="one-time-code"
+              keyboardType="number-pad"
+              maxLength={6}
+              onChangeText={setPasswordChangeCode}
+              placeholder="Six-digit code"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+              value={passwordChangeCode}
+            />
+            <TextInput
+              accessibilityLabel="New password"
+              autoCapitalize="none"
+              autoComplete="new-password"
+              maxLength={128}
+              onChangeText={setPasswordChangePassword}
+              placeholder="New password (at least 14 characters)"
+              placeholderTextColor={colors.muted}
+              secureTextEntry
+              style={styles.input}
+              value={passwordChangePassword}
+            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSubmitting || passwordChangeCode.length !== 6 || passwordChangePassword.length < 14}
+              onPress={completePasswordChange}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (isSubmitting || passwordChangeCode.length !== 6 || passwordChangePassword.length < 14) && styles.buttonDisabled,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              {isSubmitting
+                ? <ActivityIndicator color={colors.white} />
+                : <Text style={styles.primaryButtonText}>Update password</Text>}
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={isSubmitting} onPress={cancelPasswordChange} style={styles.loginSecondaryButton}>
+              <Text style={styles.loginSecondaryText}>Cancel</Text>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isSubmitting}
+            onPress={requestPasswordChangeCode}
+            style={({ pressed }) => [styles.passwordChangeButton, pressed && styles.buttonPressed]}
+          >
+            {isSubmitting
+              ? <ActivityIndicator color={colors.primary} />
+              : <Text style={styles.passwordChangeButtonText}>Change password</Text>}
+          </Pressable>
+        )}
       </View>
       {error ? <Text accessibilityRole="alert" style={styles.loginError}>{error}</Text> : null}
       <Pressable
@@ -1465,6 +2084,8 @@ interface AuthResponse {
   refreshToken?: string;
   expiresIn?: number;
   user?: RiderUser;
+  verificationRequired?: boolean;
+  verificationChannel?: 'email' | 'phone';
   error?: { code: string; message: string };
 }
 
@@ -1525,6 +2146,9 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.55 },
   buttonPressed: { opacity: 0.82 },
   loginHelp: { marginTop: 15, color: colors.muted, fontSize: 12, textAlign: 'center' },
+  loginNotice: { marginTop: 12, color: colors.primaryDark, fontSize: 12, lineHeight: 18 },
+  loginSecondaryButton: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center' },
+  loginSecondaryText: { color: colors.primaryDark, fontSize: 13, fontWeight: '600' },
   loginFooter: { marginTop: 'auto', paddingTop: 20, color: colors.muted, fontSize: 11, textAlign: 'center' },
   topBar: {
     height: 62, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center',
@@ -1686,6 +2310,10 @@ const styles = StyleSheet.create({
   profileName: { marginTop: 13, color: colors.ink, fontSize: 18, fontWeight: '800' },
   profileRole: { marginTop: 5, color: colors.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.1 },
   detailsCard: { marginTop: 13, paddingHorizontal: 16, borderRadius: 5, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
+  passwordChangeCard: { marginTop: 13, padding: 16, borderRadius: 5, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
+  passwordChangeDescription: { marginTop: 6, color: colors.muted, fontSize: 12, lineHeight: 18 },
+  passwordChangeButton: { minHeight: 46, marginTop: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.primary, borderRadius: 4 },
+  passwordChangeButtonText: { color: colors.primaryDark, fontSize: 13, fontWeight: '700' },
   detailRow: { minHeight: 55, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   detailLabel: { color: colors.muted, fontSize: 12 },
   detailValue: { maxWidth: '58%', color: colors.ink, fontSize: 12, fontWeight: '700', textAlign: 'right' },

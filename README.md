@@ -12,7 +12,7 @@ The initial foundation now includes the first usable identity and organisation w
 - A React Native Android app scaffolded with Expo and TypeScript.
 - API health endpoint tests and architecture/security/privacy documentation.
 
-API login, refresh-token rotation/revocation, account status checks, one-time platform-admin bootstrap, public SACCO workspace registration, platform-admin SACCO provisioning, SACCO-scoped rider and vehicle creation/listing, vehicle assignments, work sessions, rider trip/fare recording, and rider-only map search and route-preview endpoints are implemented. A new SACCO administrator can register a workspace at `/register`; the workspace activates immediately, and the administrator is signed in to the portal. SACCO admins add rider accounts in their workspace; those credentials are accepted by the Boda-Tracker rider app through the shared API. Expenses, reports, route-history persistence, offline synchronization, password recovery, and account invitations are **not implemented yet**. Map previews use public OpenStreetMap tiles, Photon place search, and the OSRM demo router with a car-driving profile; they are best-effort prototype services, not motorcycle navigation, and must not be used to guide real rides. See the map setup below. Other operational pages are explicit empty states and do not contain fabricated records. The original root Vite UI is retained for reference, and its JSON-backed API is archived at `legacy/prototype-server.js`; neither is used by workspace scripts or suitable for production.
+API login, email confirmation and email-code sign-in, phone sign-in, rider activation and password setup, verified rider password changes, refresh-token rotation/revocation, account status checks, one-time platform-admin bootstrap, public SACCO workspace registration, platform-admin SACCO provisioning, SACCO-scoped rider and vehicle creation/listing, vehicle assignments, work sessions, rider trip/fare recording, and rider-only map search and route-preview endpoints are implemented. Email is the preferred login; new accounts require a unique email, confirm it after registration, and receive a fresh code on every email/password sign-in. Existing accounts without an email can continue using phone login and add/verify one from Settings or the rider app's Account tab. Phone sign-in remains available; rider phone sign-ins and password changes use SMS. Configure Brevo transactional email for verification and Africa's Talking SMS for rider phone workflows. SACCO administrators register at `/register` and must verify their email before email sign-in. SACCO admins invite riders by email; riders activate with the email code and choose their own password. Live SMS requires Africa's Talking credentials and an approved Sender ID; the default Sender ID is limited to Airtel testing, and Safaricom delivery requires a dedicated Sender ID. Expenses, reports, route-history persistence, offline synchronization, and forgotten-password recovery are **not implemented yet**. Map previews use public OpenStreetMap tiles, Photon place search, and the OSRM demo router with a car-driving profile; they are best-effort prototype services, not motorcycle navigation, and must not be used to guide real rides. See the map setup below. Other operational pages are explicit empty states and do not contain fabricated records. The original root Vite UI is retained for reference, and its JSON-backed API is archived at `legacy/prototype-server.js`; neither is used by workspace scripts or suitable for production.
 
 ### Maps setup
 
@@ -70,12 +70,13 @@ Docker is optional. If using Docker, start Docker Desktop before using the local
    ```powershell
    $env:BOOTSTRAP_ADMIN_NAME = "Platform Administrator"
    $env:BOOTSTRAP_ADMIN_PHONE = "+254712345678"
+   $env:BOOTSTRAP_ADMIN_EMAIL = "admin@example.com"
    $env:BOOTSTRAP_ADMIN_PASSWORD = Read-Host "One-time administrator password"
    npm run admin:create --workspace @boda-tracker/api
-   Remove-Item Env:BOOTSTRAP_ADMIN_PASSWORD
+   Remove-Item Env:BOOTSTRAP_ADMIN_NAME, Env:BOOTSTRAP_ADMIN_PHONE, Env:BOOTSTRAP_ADMIN_EMAIL, Env:BOOTSTRAP_ADMIN_PASSWORD
    ```
 
-   Bootstrap refuses to run once a platform administrator exists. Do not reuse this example phone number.
+   Bootstrap refuses to run once a platform administrator exists. It treats the operator-supplied email as verified. Do not reuse the example phone number or email.
 
    If the configured database already contains the specific emulator test administrator, replace it with your intended administrator using the guarded local command:
 
@@ -83,7 +84,7 @@ Docker is optional. If using Docker, start Docker Desktop before using the local
    npm run admin:replace-test --workspace @boda-tracker/api
    ```
 
-   Run it only after confirming `apps/api/.env` points to the intended database. It prompts for the new name and phone and reads the password without echoing it. It refuses to modify any account other than the expected test administrator and revokes that account's refresh sessions.
+   Run it only after confirming `apps/api/.env` points to the intended database. It prompts for the new name, phone, and email and reads the password without echoing it. It refuses to modify any account other than the expected test administrator and revokes that account's refresh sessions.
 
 6. Run API and dashboard:
 

@@ -13,6 +13,7 @@ const createSchema = z.object({
   operatingArea: z.string().trim().max(120).optional(),
   adminFullName: z.string().trim().min(2).max(100),
   adminPhoneNumber: z.string().trim().min(7).max(20),
+  adminEmail: z.string().trim().email().max(254),
   adminPassword: z.string().min(14).max(128),
 }).strict();
 

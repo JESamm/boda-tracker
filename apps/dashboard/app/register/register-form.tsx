@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
 const initialForm = {
@@ -11,6 +10,7 @@ const initialForm = {
   operatingArea: '',
   adminFullName: '',
   adminPhoneNumber: '',
+  adminEmail: '',
   adminPassword: '',
 };
 
@@ -20,10 +20,11 @@ const apiBaseUrl = configuredApiUrl.replace(/\/+$/, '').endsWith('/api/v1')
   : `${configuredApiUrl.replace(/\/+$/, '')}/api/v1`;
 
 export function RegisterForm() {
-  const router = useRouter();
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState('');
   const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationNotice, setVerificationNotice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function updateField(field: keyof typeof initialForm, value: string) {
@@ -34,44 +35,77 @@ export function RegisterForm() {
     event.preventDefault();
     setError('');
     setIsSubmitting(true);
-    let workspaceCreated = false;
-
     try {
       const response = await fetch(`${apiBaseUrl}/saccos/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(form),
       });
-      workspaceCreated = response.ok;
       const result = await response.json();
       if (!response.ok) {
+        if (result.error?.code === 'ACCOUNT_CREATED_EMAIL_FAILED') {
+          setNeedsSignIn(false);
+          setVerificationNotice('Your SACCO workspace was created, but the confirmation email could not be sent. Request a code again after email delivery is configured.');
+          return;
+        }
         setError(result.error?.message ?? 'Could not create your SACCO workspace.');
         return;
       }
+      setNeedsSignIn(false);
+      setVerificationNotice('A confirmation code was sent to your email. Enter it below to verify your account.');
+      setVerificationCode('');
+    } catch {
+      setError(`Could not reach the registration service at ${apiBaseUrl}. If you already submitted the form, check whether your SACCO was created before trying again.`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
-      const login = await fetch('/api/auth/login', {
+  async function verifyEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/email/verify`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: form.adminPhoneNumber,
-          password: form.adminPassword,
+          email: form.adminEmail,
+          code: verificationCode,
         }),
       });
-      if (!login.ok) {
-        setNeedsSignIn(true);
-        setForm(initialForm);
+      const result = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not verify the email. Check the code and try again.');
         return;
       }
-
-      router.replace('/riders');
-      router.refresh();
+      setNeedsSignIn(true);
+      setVerificationNotice('');
+      setForm(initialForm);
     } catch {
-      if (workspaceCreated) {
-        setNeedsSignIn(true);
-        setForm(initialForm);
-      } else {
-        setError(`Could not reach the registration service at ${apiBaseUrl}. If you already submitted the form, check whether your SACCO was created before trying again.`);
+      setError('Could not reach the email verification service. Try again shortly.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function resendVerificationCode() {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/email/verification/request`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: form.adminEmail }),
+      });
+      const result = await response.json() as { error?: { message?: string } };
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not resend the confirmation code.');
+        return;
       }
+      setVerificationNotice('If this email has an unverified account, a new confirmation code has been sent.');
+    } catch {
+      setError('Could not reach the email verification service. Try again shortly.');
     } finally {
       setIsSubmitting(false);
     }
@@ -80,10 +114,26 @@ export function RegisterForm() {
   if (needsSignIn) {
     return (
       <div className="registration-success" role="status">
-        <strong>Your SACCO workspace is ready.</strong>
-        <span>Sign in with the administrator phone number and password you entered to start adding riders.</span>
+        <strong>Your email is verified and SACCO workspace is ready.</strong>
+        <span>Sign in using your email and password. A separate code will be sent for email sign-in.</span>
         <Link className="login-submit" href="/login">Continue to sign in <span aria-hidden="true">→</span></Link>
       </div>
+    );
+  }
+
+  if (verificationNotice || verificationCode) {
+    return (
+      <form className="login-form registration-form" onSubmit={verifyEmail}>
+        <h2>Verify administrator email</h2>
+        <p>{verificationNotice || `Enter the confirmation code sent to ${form.adminEmail}.`}</p>
+        <label htmlFor="register-email-code">Six-digit email code</label>
+        <input id="register-email-code" autoComplete="one-time-code" inputMode="numeric" maxLength={6} onChange={(event) => setVerificationCode(event.target.value)} required value={verificationCode} />
+        {error && <p className="login-error" role="alert">{error}</p>}
+        <button className="login-submit" disabled={isSubmitting || verificationCode.length !== 6} type="submit">
+          {isSubmitting ? 'Verifying…' : 'Verify email'}
+        </button>
+        <button className="login-secondary" disabled={isSubmitting} onClick={() => void resendVerificationCode()} type="button">Resend code</button>
+      </form>
     );
   }
 
@@ -110,9 +160,11 @@ export function RegisterForm() {
       <input id="register-admin-name" autoComplete="name" maxLength={100} onChange={(event) => updateField('adminFullName', event.target.value)} required value={form.adminFullName} />
       <label htmlFor="register-admin-phone">Administrator login phone</label>
       <input id="register-admin-phone" autoComplete="username" inputMode="tel" maxLength={20} onChange={(event) => updateField('adminPhoneNumber', event.target.value)} placeholder="+254 7XX XXX XXX" required value={form.adminPhoneNumber} />
+      <label htmlFor="register-admin-email">Administrator email (primary login)</label>
+      <input id="register-admin-email" autoComplete="email" inputMode="email" maxLength={254} onChange={(event) => updateField('adminEmail', event.target.value)} required type="email" value={form.adminEmail} />
       <label htmlFor="register-admin-password">Create password</label>
       <input id="register-admin-password" autoComplete="new-password" minLength={14} maxLength={128} onChange={(event) => updateField('adminPassword', event.target.value)} required type="password" value={form.adminPassword} />
-      <p className="registration-note">Use a unique password with at least 14 characters. Your workspace is activated immediately.</p>
+      <p className="registration-note">Use a unique password with at least 14 characters. We’ll email a confirmation code before enabling sign-in.</p>
       {error && <p className="login-error" role="alert">{error}</p>}
       <button className="login-submit" disabled={isSubmitting} type="submit">
         {isSubmitting ? 'Creating workspace…' : 'Create SACCO workspace'}

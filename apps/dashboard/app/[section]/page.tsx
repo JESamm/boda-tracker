@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DashboardShell } from '../components/dashboard-shell';
+import { AccountEmailSettings } from '../components/account-email-settings';
 import { requireDashboardSession } from '../lib/require-session';
 
 const sections = {
@@ -107,6 +108,7 @@ export default async function SectionPage({
         <span className="preview-badge"><span /> Preview workspace</span>
       </section>
 
+      {section === 'settings' ? <AccountEmailSettings /> : <>
       <section className="directory-status">
         <span className="directory-icon">{page.icon}</span>
         <div><strong>Live SACCO data is not connected</strong><span>This page is a preview of the administration workspace. No sample records are shown.</span></div>
@@ -136,6 +138,7 @@ export default async function SectionPage({
           <Link className="text-link info-link" href={page.href}>{page.next} <span aria-hidden="true">→</span></Link>
         </aside>
       </section>
+      </>}
     </DashboardShell>
   );
 }

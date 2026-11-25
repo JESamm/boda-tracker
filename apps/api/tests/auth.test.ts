@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
-import { hashPassword, type AuthAccount, type AuthRepository, type RefreshSession } from '../src/auth/auth.js';
+import { hashPassword, type AuthAccount, type AuthRepository, type RefreshSession, type VerificationPurpose } from '../src/auth/auth.js';
+import type { SmsSender } from '../src/sms/africas-talking.js';
 import type { CreateRiderInput, CreateVehicleInput, DirectoryRepository, RiderSummary, VehicleSummary } from '../src/resources/directory.js';
 import { MapsServiceError, type MapsRepository } from '../src/resources/maps.js';
 import { OperationsRuleError, type AssignmentSummary, type OperationsRepository, type RiderWorkspaceSummary, type TripSummary, type WorkSessionSummary } from '../src/resources/operations.js';
@@ -16,6 +17,8 @@ const activeAccount: AuthAccount = {
   id: 'user-1',
   fullName: 'Test SACCO Admin',
   phoneNumber,
+  email: 'admin@example.com',
+  emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
   passwordHash: '',
   role: 'SACCO_ADMIN',
   saccoId: 'sacco-1',
@@ -31,7 +34,7 @@ function createTestApi(
   operationsRepository?: OperationsRepository,
   mapsRepository?: MapsRepository,
 ) {
-  let account = {
+  let account: AuthAccount = {
     ...activeAccount,
     passwordHash,
     role,
@@ -40,10 +43,26 @@ function createTestApi(
     saccoStatus: role === 'PLATFORM_ADMIN' ? null : activeAccount.saccoStatus,
   };
   const sessions: RefreshSession[] = [];
+  const verificationCodes: Array<{
+    id: string;
+    userId: string;
+    purpose: VerificationPurpose;
+    codeHash: string;
+    expiresAt: Date;
+    createdAt: Date;
+    attempts: number;
+    consumedAt: Date | null;
+  }> = [];
+  let latestSmsCode = '';
+  let latestEmailCode = '';
+  let emailDeliveryFailure = false;
   const revokedAll = vi.fn(async () => undefined);
   const repository: AuthRepository = {
     async findUserByPhone(phone) {
       return phone === account.phoneNumber ? account : null;
+    },
+    async findUserByEmail(email) {
+      return email.toLowerCase() === account.email?.toLowerCase() ? account : null;
     },
     async findUserById(id) {
       return id === account.id ? account : null;
@@ -82,6 +101,39 @@ function createTestApi(
       for (const session of sessions) {
         if (session.userId === userId) session.revokedAt = new Date();
       }
+    },
+    async createVerificationCode(input) {
+      verificationCodes.push({ ...input, createdAt: new Date(), attempts: 0, consumedAt: null });
+    },
+    async findLatestVerificationCode(userId, purpose) {
+      const code = verificationCodes
+        .filter((entry) => entry.userId === userId && entry.purpose === purpose && !entry.consumedAt)
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
+      return code ? { id: code.id, createdAt: code.createdAt } : null;
+    },
+    async countRecentVerificationCodes(userId, purpose, since) {
+      return verificationCodes.filter((entry) =>
+        entry.userId === userId && entry.purpose === purpose && entry.createdAt >= since).length;
+    },
+    async consumeVerificationCode(id, codeHash, now) {
+      const code = verificationCodes.find((entry) => entry.id === id);
+      if (!code || code.consumedAt || code.expiresAt <= now || code.attempts >= 5 || code.codeHash !== codeHash) {
+        if (code && !code.consumedAt && code.expiresAt > now && code.attempts < 5) code.attempts += 1;
+        return false;
+      }
+      code.consumedAt = now;
+      return true;
+    },
+    async setUserPassword(userId, nextPasswordHash, activate) {
+      if (userId === account.id) {
+        account = { ...account, passwordHash: nextPasswordHash, ...(activate ? { status: 'ACTIVE' as const } : {}) };
+      }
+    },
+    async setUserEmail(userId, email) {
+      if (userId === account.id) account = { ...account, email, emailVerifiedAt: null };
+    },
+    async markEmailVerified(userId, verifiedAt) {
+      if (userId === account.id) account = { ...account, emailVerifiedAt: verifiedAt };
     },
   };
   const defaultSaccoRepository: SaccoRepository = {
@@ -129,16 +181,54 @@ function createTestApi(
     maps: mapsRepository ?? defaultMapsRepository,
     operations: operationsRepository ?? defaultOperationsRepository,
     accessTokenSecret,
+    smsSender: {
+      async send(_phoneNumber, message) {
+        const code = message.match(/code: (\d{6})/)?.[1];
+        if (!code) throw new Error('Verification code missing from test message.');
+        latestSmsCode = code;
+      },
+    } satisfies SmsSender,
+    emailSender: {
+      async sendVerificationCode(_email, code) {
+        if (emailDeliveryFailure) throw new Error('Configured test email delivery failure.');
+        latestEmailCode = code;
+      },
+    },
   });
 
   return {
     app,
     sessions,
     revokedAll,
+    getLastOtpCode() {
+      return latestSmsCode;
+    },
+    getLastEmailCode() {
+      return latestEmailCode;
+    },
+    setEmailVerifiedAt(value: Date | null) {
+      account = { ...account, emailVerifiedAt: value };
+    },
+    setAccountEmail(value: string | null) {
+      account = { ...account, email: value };
+    },
+    setEmailDeliveryFailure(value: boolean) {
+      emailDeliveryFailure = value;
+    },
     setAccountStatus(status: AuthAccount['status']) {
       account = { ...account, status };
     },
   };
+}
+
+async function signInAsRider(app: ReturnType<typeof createTestApi>['app'], getLastOtpCode: () => string) {
+  const challenge = await request(app)
+    .post('/api/v1/auth/login')
+    .send({ phoneNumber, password });
+  if (challenge.status !== 202) return challenge;
+  return request(app)
+    .post('/api/v1/auth/login/verify')
+    .send({ phoneNumber, code: getLastOtpCode() });
 }
 
 beforeAll(async () => {
@@ -146,6 +236,209 @@ beforeAll(async () => {
 });
 
 describe('authentication endpoints', () => {
+  it('requires email confirmation and a fresh email code for every email sign-in', async () => {
+    const { app, getLastEmailCode, setEmailVerifiedAt } = createTestApi();
+    setEmailVerifiedAt(null);
+
+    const requested = await request(app)
+      .post('/api/v1/auth/email/verification/request')
+      .send({ email: 'admin@example.com' });
+    expect(requested.status).toBe(202);
+
+    const confirmed = await request(app)
+      .post('/api/v1/auth/email/verify')
+      .send({ email: 'admin@example.com', code: getLastEmailCode() });
+    expect(confirmed.status).toBe(204);
+
+    const challenge = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'ADMIN@example.com', password });
+    expect(challenge.status).toBe(202);
+    expect(challenge.body.verificationChannel).toBe('email');
+    expect(challenge.body).not.toHaveProperty('accessToken');
+
+    const verified = await request(app)
+      .post('/api/v1/auth/login/email/verify')
+      .send({ email: 'admin@example.com', code: getLastEmailCode() });
+    expect(verified.status).toBe(200);
+    expect(verified.body.user.email).toBe('admin@example.com');
+
+    const replay = await request(app)
+      .post('/api/v1/auth/login/email/verify')
+      .send({ email: 'admin@example.com', code: getLastEmailCode() });
+    expect(replay.status).toBe(401);
+  });
+
+  it('retains the phone login flow for accounts with email', async () => {
+    const { app, getLastOtpCode } = createTestApi();
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    expect(login.status).toBe(200);
+    expect(login.body.user.email).toBe('admin@example.com');
+    expect(getLastOtpCode()).toBe('');
+  });
+
+  it('lets an existing phone account add and verify an email before email sign-in', async () => {
+    const { app, getLastEmailCode, setAccountEmail } = createTestApi();
+    setAccountEmail(null);
+    const phoneLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+    expect(phoneLogin.status).toBe(200);
+
+    const added = await request(app)
+      .post('/api/v1/auth/email/add')
+      .set('Authorization', `Bearer ${phoneLogin.body.accessToken}`)
+      .send({ email: 'new-address@example.com' });
+    expect(added.status).toBe(202);
+
+    const confirmed = await request(app)
+      .post('/api/v1/auth/email/verify')
+      .send({ email: 'new-address@example.com', code: getLastEmailCode() });
+    expect(confirmed.status).toBe(204);
+
+    const challenge = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'new-address@example.com', password });
+    expect(challenge.status).toBe(202);
+    expect(challenge.body.verificationChannel).toBe('email');
+  });
+
+  it('reports email delivery failure without losing the legacy phone-login recovery path', async () => {
+    const { app, setAccountEmail, setEmailDeliveryFailure } = createTestApi();
+    setAccountEmail(null);
+    setEmailDeliveryFailure(true);
+    const phoneLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    const response = await request(app)
+      .post('/api/v1/auth/email/add')
+      .set('Authorization', `Bearer ${phoneLogin.body.accessToken}`)
+      .send({ email: 'new-address@example.com' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('EMAIL_UPDATE_DELIVERY_FAILED');
+    expect(response.body.error.message).toMatch(/added/);
+  });
+
+  it('requires a valid SMS code before issuing a rider session', async () => {
+    const { app, getLastOtpCode } = createTestApi('RIDER');
+    const challenge = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    expect(challenge.status).toBe(202);
+    expect(challenge.body.verificationRequired).toBe(true);
+    expect(challenge.body).not.toHaveProperty('accessToken');
+
+    const invalid = await request(app)
+      .post('/api/v1/auth/login/verify')
+      .send({ phoneNumber, code: '000000' });
+    expect(invalid.status).toBe(401);
+
+    const verified = await request(app)
+      .post('/api/v1/auth/login/verify')
+      .send({ phoneNumber, code: getLastOtpCode() });
+    expect(verified.status).toBe(200);
+    expect(verified.body.accessToken).toEqual(expect.any(String));
+
+    const replay = await request(app)
+      .post('/api/v1/auth/login/verify')
+      .send({ phoneNumber, code: getLastOtpCode() });
+    expect(replay.status).toBe(401);
+  });
+
+  it('activates invited riders only after a valid code and a rider-chosen password', async () => {
+    const { app, getLastOtpCode, setAccountStatus } = createTestApi('RIDER');
+    setAccountStatus('INVITED');
+    const requested = await request(app)
+      .post('/api/v1/auth/activation/request')
+      .send({ phoneNumber });
+    expect(requested.status).toBe(202);
+
+    const activated = await request(app)
+      .post('/api/v1/auth/activation/complete')
+      .send({
+        phoneNumber,
+        code: getLastOtpCode(),
+        password: 'a-new-secure-rider-password-123',
+      });
+
+    expect(activated.status).toBe(204);
+
+    const oldPassword = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+    expect(oldPassword.status).toBe(401);
+    const newPassword = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password: 'a-new-secure-rider-password-123' });
+    expect(newPassword.status).toBe(202);
+  });
+
+  it('activates invited riders with an email code and password', async () => {
+    const { app, getLastEmailCode, setAccountStatus, setEmailVerifiedAt } = createTestApi('RIDER');
+    setAccountStatus('INVITED');
+    setEmailVerifiedAt(null);
+    const requested = await request(app)
+      .post('/api/v1/auth/email/verification/request')
+      .send({ email: 'admin@example.com' });
+    expect(requested.status).toBe(202);
+
+    const activated = await request(app)
+      .post('/api/v1/auth/activation/email/complete')
+      .send({
+        email: 'admin@example.com',
+        code: getLastEmailCode(),
+        password: 'a-new-secure-rider-password-123',
+      });
+    expect(activated.status).toBe(204);
+
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'admin@example.com', password: 'a-new-secure-rider-password-123' });
+    expect(login.status).toBe(202);
+    expect(login.body.verificationChannel).toBe('email');
+  });
+
+  it('requires phone verification before changing a rider password and revokes refresh sessions', async () => {
+    const { app, getLastOtpCode, sessions } = createTestApi('RIDER');
+    const login = await signInAsRider(app, getLastOtpCode);
+    const authorization = { Authorization: `Bearer ${login.body.accessToken}` };
+
+    const requested = await request(app)
+      .post('/api/v1/auth/password/change/request')
+      .set(authorization);
+    expect(requested.status).toBe(202);
+
+    const changed = await request(app)
+      .post('/api/v1/auth/password/change/complete')
+      .set(authorization)
+      .send({ code: getLastOtpCode(), password: 'another-new-secure-rider-password-456' });
+    expect(changed.status).toBe(204);
+    expect(sessions.every((session) => session.revokedAt !== null)).toBe(true);
+  });
+
+  it('limits verification-code guesses to five attempts', async () => {
+    const { app, getLastOtpCode } = createTestApi('RIDER');
+    await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await request(app)
+        .post('/api/v1/auth/login/verify')
+        .send({ phoneNumber, code: getLastOtpCode() === '999999' ? '000000' : '999999' });
+      expect(response.status).toBe(401);
+    }
+    const locked = await request(app)
+      .post('/api/v1/auth/login/verify')
+      .send({ phoneNumber, code: getLastOtpCode() });
+    expect(locked.status).toBe(401);
+  });
+
   it('normalizes Kenyan phone numbers and returns an access token without exposing password data', async () => {
     const { app } = createTestApi();
     const login = await request(app)
@@ -157,6 +450,8 @@ describe('authentication endpoints', () => {
       id: 'user-1',
       fullName: 'Test SACCO Admin',
       phoneNumber,
+      email: 'admin@example.com',
+      emailVerified: true,
       role: 'SACCO_ADMIN',
       saccoId: 'sacco-1',
       saccoName: 'Test SACCO',
@@ -261,6 +556,7 @@ describe('SACCO provisioning', () => {
         id: 'sacco-admin',
         fullName: 'SACCO Manager',
         phoneNumber: '+254711111111',
+        email: 'manager@example.com',
       },
     };
     const saccoRepository: SaccoRepository = {
@@ -284,6 +580,7 @@ describe('SACCO provisioning', () => {
         operatingArea: 'Nairobi',
         adminFullName: 'SACCO Manager',
         adminPhoneNumber: '0711 111 111',
+        adminEmail: 'manager@example.com',
         adminPassword: 'A-unique-temporary-password-937!',
       });
 
@@ -325,6 +622,7 @@ describe('SACCO provisioning', () => {
         registrationNumber: 'CS12345',
         adminFullName: 'SACCO Manager',
         adminPhoneNumber: '+254711111111',
+        adminEmail: 'manager@example.com',
         adminPassword: 'A-unique-temporary-password-937!',
       });
 
@@ -346,6 +644,7 @@ describe('SACCO provisioning', () => {
         id: 'self-registered-admin',
         fullName: 'SACCO Owner',
         phoneNumber: '+254711111111',
+        email: 'owner@example.com',
       },
     };
     const saccoRepository: SaccoRepository = {
@@ -355,7 +654,7 @@ describe('SACCO provisioning', () => {
         return record;
       },
     };
-    const { app } = createTestApi('SACCO_ADMIN', saccoRepository);
+    const { app, getLastEmailCode } = createTestApi('SACCO_ADMIN', saccoRepository);
     const response = await request(app)
       .post('/api/v1/saccos/register')
       .send({
@@ -365,11 +664,14 @@ describe('SACCO provisioning', () => {
         operatingArea: 'Nairobi',
         adminFullName: record.administrator.fullName,
         adminPhoneNumber: '0711 111 111',
+        adminEmail: 'owner@example.com',
         adminPassword: 'A-unique-workspace-password-937!',
       });
 
     expect(response.status).toBe(201);
     expect(response.body.data.status).toBe('ACTIVE');
+    expect(response.body.verificationRequired).toBe(true);
+    expect(getLastEmailCode()).toMatch(/^\d{6}$/);
     expect(provisioned?.actor).toBeUndefined();
     expect(provisioned?.registrationNumber).toBe('CS12345');
     expect(provisioned?.phoneNumber).toBe('+254722222222');
@@ -393,6 +695,7 @@ describe('SACCO provisioning', () => {
         name: 'Westlands Riders SACCO',
         adminFullName: 'SACCO Owner',
         adminPhoneNumber: 'not-a-phone',
+        adminEmail: 'owner@example.com',
         adminPassword: 'short',
       });
     expect(invalid.status).toBe(400);
@@ -403,6 +706,7 @@ describe('SACCO provisioning', () => {
         name: 'Westlands Riders SACCO',
         adminFullName: 'SACCO Owner',
         adminPhoneNumber: '+254711111111',
+        adminEmail: 'owner@example.com',
         adminPassword: 'A-unique-workspace-password-937!',
       });
     expect(duplicate.status).toBe(409);
@@ -437,7 +741,8 @@ describe('tenant-scoped rider and fleet directory', () => {
       id: 'rider-1',
       fullName: 'Rider One',
       phoneNumber: '+254733333333',
-      status: 'ACTIVE',
+      email: 'rider@example.com',
+      status: 'INVITED',
       createdAt: new Date('2026-02-01T00:00:00.000Z'),
     };
     const directoryRepository: DirectoryRepository = {
@@ -452,7 +757,7 @@ describe('tenant-scoped rider and fleet directory', () => {
       async listVehicles() { return { data: [], nextCursor: null }; },
       async createVehicle() { throw new Error('Not used in rider test.'); },
     };
-    const { app } = createTestApi('SACCO_ADMIN', undefined, directoryRepository);
+    const { app, getLastEmailCode } = createTestApi('SACCO_ADMIN', undefined, directoryRepository);
     const login = await request(app)
       .post('/api/v1/auth/login')
       .send({ phoneNumber, password });
@@ -481,12 +786,13 @@ describe('tenant-scoped rider and fleet directory', () => {
       .send({
         fullName: 'Rider One',
         phoneNumber: '0733 333 333',
-        initialPassword: 'A-unique-rider-password-937!',
+        email: 'rider@example.com',
       });
     expect(validCreate.status).toBe(201);
+    expect(getLastEmailCode()).toMatch(/^\d{6}$/);
     expect(createInput?.saccoId).toBe('sacco-1');
     expect(createInput?.phoneNumber).toBe('+254733333333');
-    expect(createInput?.passwordHash).not.toBe('A-unique-rider-password-937!');
+    expect(createInput?.passwordHash).toMatch(/^\$scrypt\$/);
   });
 
   it('scopes vehicle registration to the current SACCO and restricts directory access to SACCO admins', async () => {
@@ -529,10 +835,8 @@ describe('tenant-scoped rider and fleet directory', () => {
     expect(vehicleInput?.saccoId).toBe('sacco-1');
     expect(vehicleInput?.normalizedRegistration).toBe('KCA123A');
 
-    const { app: riderApp } = createTestApi('RIDER', undefined, directoryRepository);
-    const riderLogin = await request(riderApp)
-      .post('/api/v1/auth/login')
-      .send({ phoneNumber, password });
+    const { app: riderApp, getLastOtpCode } = createTestApi('RIDER', undefined, directoryRepository);
+    const riderLogin = await signInAsRider(riderApp, getLastOtpCode);
     const forbidden = await request(riderApp)
       .get('/api/v1/vehicles')
       .set({ Authorization: `Bearer ${riderLogin.body.accessToken}` });
@@ -640,10 +944,8 @@ describe('SACCO assignments and rider work sessions', () => {
       async startTrip() { throw new Error('Trips are not used in this test.'); },
       async completeTrip() { return null; },
     };
-    const { app } = createTestApi('RIDER', undefined, undefined, operationsRepository);
-    const login = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ phoneNumber, password });
+    const { app, getLastOtpCode } = createTestApi('RIDER', undefined, undefined, operationsRepository);
+    const login = await signInAsRider(app, getLastOtpCode);
     const authorization = { Authorization: ['Bearer', login.body.accessToken].join(' ') };
 
     const workspace = await request(app).get('/api/v1/rider/workspace').set(authorization);
@@ -716,10 +1018,8 @@ describe('SACCO assignments and rider work sessions', () => {
         };
       },
     };
-    const { app } = createTestApi('RIDER', undefined, undefined, operationsRepository);
-    const login = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ phoneNumber, password });
+    const { app, getLastOtpCode } = createTestApi('RIDER', undefined, undefined, operationsRepository);
+    const login = await signInAsRider(app, getLastOtpCode);
     const authorization = { Authorization: ['Bearer', login.body.accessToken].join(' ') };
 
     const history = await request(app)
@@ -816,10 +1116,8 @@ describe('SACCO assignments and rider work sessions', () => {
         };
       },
     };
-    const { app } = createTestApi('RIDER', undefined, undefined, undefined, mapsRepository);
-    const login = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ phoneNumber, password });
+    const { app, getLastOtpCode } = createTestApi('RIDER', undefined, undefined, undefined, mapsRepository);
+    const login = await signInAsRider(app, getLastOtpCode);
     const authorization = { Authorization: ['Bearer', login.body.accessToken].join(' ') };
 
     const suggestions = await request(app)
@@ -873,10 +1171,8 @@ describe('SACCO assignments and rider work sessions', () => {
       async getRoutes() { return []; },
       async getTile() { throw new MapsServiceError('OpenStreetMap could not provide this map tile.', 'UPSTREAM_ERROR', 502); },
     };
-    const { app } = createTestApi('RIDER', undefined, undefined, undefined, mapsRepository);
-    const login = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ phoneNumber, password });
+    const { app, getLastOtpCode } = createTestApi('RIDER', undefined, undefined, undefined, mapsRepository);
+    const login = await signInAsRider(app, getLastOtpCode);
     const response = await request(app)
       .get('/api/v1/maps/places?input=Nairobi')
       .set({ Authorization: ['Bearer', login.body.accessToken].join(' ') });

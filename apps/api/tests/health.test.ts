@@ -9,12 +9,20 @@ import type { SaccoRepository } from '../src/resources/saccos.js';
 
 const authRepository: AuthRepository = {
   async findUserByPhone() { return null; },
+  async findUserByEmail() { return null; },
   async findUserById() { return null; },
   async findRefreshSession() { return null; },
   async createRefreshSession() {},
   async rotateRefreshSession() { return false; },
   async revokeRefreshSession() {},
   async revokeAllRefreshSessions() {},
+  async createVerificationCode() {},
+  async findLatestVerificationCode() { return null; },
+  async countRecentVerificationCodes() { return 0; },
+  async consumeVerificationCode() { return false; },
+  async setUserPassword() {},
+  async setUserEmail() {},
+  async markEmailVerified() {},
 };
 
 const saccoRepository: SaccoRepository = {

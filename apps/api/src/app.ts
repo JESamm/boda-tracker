@@ -7,6 +7,8 @@ import { createDirectoryRouter, type DirectoryRepository } from './resources/dir
 import { createMapsRouter, type MapsRepository } from './resources/maps.js';
 import { createOperationsRouter, type OperationsRepository } from './resources/operations.js';
 import { createSaccoRouter, type SaccoRepository } from './resources/saccos.js';
+import type { SmsSender } from './sms/africas-talking.js';
+import type { EmailSender } from './email/brevo.js';
 
 export interface HealthDatabase {
   ping(): Promise<void>;
@@ -21,6 +23,8 @@ interface CreateAppOptions {
   maps: MapsRepository;
   operations: OperationsRepository;
   accessTokenSecret: string;
+  smsSender?: SmsSender;
+  emailSender?: EmailSender;
 }
 
 export function createApp({
@@ -32,8 +36,20 @@ export function createApp({
   maps,
   operations,
   accessTokenSecret,
+  smsSender,
+  emailSender,
 }: CreateAppOptions): Express {
   const app = express();
+  const outboundSms = smsSender ?? {
+    async send() {
+      throw new Error('No SMS sender is configured for this application instance.');
+    },
+  };
+  const outboundEmail = emailSender ?? {
+    async sendVerificationCode() {
+      throw new Error('No email sender is configured for this application instance.');
+    },
+  };
 
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -51,14 +67,32 @@ export function createApp({
     legacyHeaders: false,
   });
   app.use('/api/v1/auth', authLimiter);
-  app.use('/api/v1/auth', createAuthRouter(auth, accessTokenSecret));
+  app.use('/api/v1/auth/activation/request', rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  }));
+  app.use('/api/v1/auth/password/change/request', rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  }));
+  app.use('/api/v1/auth/email/verification/request', rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  }));
+  app.use('/api/v1/auth', createAuthRouter(auth, accessTokenSecret, outboundSms, outboundEmail));
   app.use('/api/v1/saccos/register', rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: 5,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
   }));
-  app.use('/api/v1/saccos', createSaccoRouter(auth, saccos, accessTokenSecret));
+  app.use('/api/v1/saccos', createSaccoRouter(auth, saccos, accessTokenSecret, outboundEmail));
   app.use('/api/v1/maps', rateLimit({
     windowMs: 60 * 1000,
     limit: 30,
@@ -73,7 +107,7 @@ export function createApp({
     legacyHeaders: false,
   }));
   app.use('/api/v1/maps', createMapsRouter(auth, maps, accessTokenSecret));
-  app.use('/api/v1', createDirectoryRouter(auth, directory, accessTokenSecret));
+  app.use('/api/v1', createDirectoryRouter(auth, directory, accessTokenSecret, outboundEmail));
   app.use('/api/v1', createOperationsRouter(auth, operations, accessTokenSecret));
 
   app.get('/health/live', (_request, response) => {

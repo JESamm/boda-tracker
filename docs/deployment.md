@@ -9,6 +9,8 @@ The Android app is not deployed by this Blueprint.
 ## Configuration
 
 - API variables are listed in `apps/api/.env.example`.
+- Africa's Talking SMS variables are optional until rider messaging is enabled; Safaricom delivery requires a dedicated, approved Sender ID.
+- Set `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` on the API service to deliver email confirmation, sign-in, and rider activation codes. Verify the sender address in Brevo first.
 - The API requires Node.js 20.19 or later for Prisma 7 and the current dashboard toolchain.
 - Dashboard variables are listed in `apps/dashboard/.env.example`.
 - Rider development URL is listed in `apps/rider-app/.env.example`.
@@ -29,18 +31,33 @@ The Android app is not deployed by this Blueprint.
    ```powershell
    $env:BOOTSTRAP_ADMIN_NAME = "Platform Administrator"
    $env:BOOTSTRAP_ADMIN_PHONE = "+254712345678"
+   $env:BOOTSTRAP_ADMIN_EMAIL = "admin@example.com"
    $env:BOOTSTRAP_ADMIN_PASSWORD = Read-Host "One-time administrator password"
    npm run admin:create --workspace @boda-tracker/api
-   Remove-Item Env:BOOTSTRAP_ADMIN_NAME, Env:BOOTSTRAP_ADMIN_PHONE, Env:BOOTSTRAP_ADMIN_PASSWORD
+   Remove-Item Env:BOOTSTRAP_ADMIN_NAME, Env:BOOTSTRAP_ADMIN_PHONE, Env:BOOTSTRAP_ADMIN_EMAIL, Env:BOOTSTRAP_ADMIN_PASSWORD
    ```
 
-   Replace the example phone number and use a unique password. Bootstrap is intentionally one-time. Render's free web services do not provide Shell access, so run this command locally; never commit the credentials.
+   Replace the example phone number and email and use a unique password. Bootstrap is intentionally one-time and marks the operator-supplied email verified. Render's free web services do not provide Shell access, so run this command locally; never commit the credentials.
 
-   If the intended database already contains the specific emulator test administrator, do not rerun bootstrap. After confirming `apps/api/.env` points to the same intended database, run `npm run admin:replace-test --workspace @boda-tracker/api` from an interactive local terminal. The command only replaces that exact test record, prompts for the new login details with the password hidden, and revokes its refresh sessions.
+   If the intended database already contains the specific emulator test administrator, do not rerun bootstrap. After confirming `apps/api/.env` points to the same intended database, run `npm run admin:replace-test --workspace @boda-tracker/api` from an interactive local terminal. The command only replaces that exact test record, prompts for the new name, phone, and email with the password hidden, marks the operator-supplied email verified, and revokes its refresh sessions.
 6. Verify the API at `/health/live` and `/api/v1/health/ready`, then open the dashboard service URL and sign in at `/login`.
 7. Configure a production Android build with the deployed API base URL before distributing the rider app. Do not reuse the development URL in `apps/rider-app/.env.example`.
 
-SACCO administrators can also register directly from the dashboard's **Create your SACCO workspace** link on `/login` (or at `/register`). Registration activates the SACCO immediately and signs in its first administrator. From the portal, add rider accounts; riders can use those issued phone/password credentials in the Android rider app, which authenticates against the same API and database.
+SACCO administrators can register directly from the dashboard's **Create your SACCO workspace** link on `/login` (or at `/register`). The workspace and administrator are created immediately, but the administrator must confirm their email before email sign-in; each email sign-in sends a fresh code. Existing users without email can continue signing in by phone and add/confirm an email in dashboard **Settings** or the rider app **Account** tab. From the portal, add riders using their names, phone numbers, and email addresses; no temporary password is created or sent. Riders receive an email activation code, choose a password in the app, and verify a fresh code on every email sign-in. Phone sign-in remains supported, with SMS codes for rider phone sign-in and password changes.
+
+### Transactional email setup
+
+Create a Brevo API key and verify the sender address in Brevo. Add `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` to the Render API service's **Environment** settings. Keep the key private and never place it in dashboard/mobile configuration or source control. Email confirmation and activation are not available until these values are configured; if a send fails after an account is created, the user can request a fresh code after email delivery is restored.
+
+### Rider SMS setup
+
+Set these variables in the Render API service's **Environment** settings; do not commit credentials:
+
+- `AFRICAS_TALKING_USERNAME`
+- `AFRICAS_TALKING_API_KEY`
+- `AFRICAS_TALKING_SENDER_ID`
+
+The default Africa's Talking Sender ID is for Airtel testing only. To deliver to Safaricom, apply for a dedicated Sender ID in the Africa's Talking dashboard and configure the approved value. Confirm account balance and message pricing with the provider; the testing API does not imply free production SMS. If SMS is not configured or delivery fails, the rider remains `INVITED`, the API reports the failure, and the rider can request another activation code after configuration. Do not send real SMS from automated tests.
 
 The dashboard's `NEXT_PUBLIC_API_BASE_URL` must point to the deployed API base path (`/api/v1`) so the browser can register directly with the API; the Render Blueprint derives it from the API service URL. The API CORS origin must match the dashboard URL.
 

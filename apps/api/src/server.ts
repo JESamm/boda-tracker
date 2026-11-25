@@ -5,6 +5,8 @@ import { createPublicMapsRepository } from './resources/maps.js';
 import type { CreateRiderInput, CreateVehicleInput, DirectoryPage } from './resources/directory.js';
 import { OperationsRuleError, type AssignmentSummary, type OperationsRepository, type TripSummary, type WorkSessionSummary } from './resources/operations.js';
 import type { ProvisionSaccoInput, SaccoSummary } from './resources/saccos.js';
+import { AfricaTalkingSmsSender } from './sms/africas-talking.js';
+import { BrevoEmailSender } from './email/brevo.js';
 
 const env = loadEnv();
 const allowedOrigins = env.CORS_ALLOWED_ORIGINS
@@ -15,6 +17,16 @@ const allowedOrigins = env.CORS_ALLOWED_ORIGINS
 const app = createApp({
   allowedOrigins,
   accessTokenSecret: env.AUTH_ACCESS_TOKEN_SECRET,
+  smsSender: new AfricaTalkingSmsSender({
+    ...(env.AFRICAS_TALKING_USERNAME ? { username: env.AFRICAS_TALKING_USERNAME } : {}),
+    ...(env.AFRICAS_TALKING_API_KEY ? { apiKey: env.AFRICAS_TALKING_API_KEY } : {}),
+    ...(env.AFRICAS_TALKING_SENDER_ID ? { senderId: env.AFRICAS_TALKING_SENDER_ID } : {}),
+  }),
+  emailSender: new BrevoEmailSender({
+    ...(env.BREVO_API_KEY ? { apiKey: env.BREVO_API_KEY } : {}),
+    ...(env.BREVO_SENDER_EMAIL ? { senderEmail: env.BREVO_SENDER_EMAIL } : {}),
+    ...(env.BREVO_SENDER_NAME ? { senderName: env.BREVO_SENDER_NAME } : {}),
+  }),
   database: {
     async ping() {
       await prisma.$queryRaw`SELECT 1`;
@@ -24,6 +36,18 @@ const app = createApp({
     async findUserByPhone(phoneNumber) {
       const user = await prisma.user.findUnique({
         where: { phoneNumber },
+        include: { sacco: { select: { name: true, status: true } } },
+      });
+      if (!user) return null;
+      return {
+        ...user,
+        saccoName: user.sacco?.name ?? null,
+        saccoStatus: user.sacco?.status ?? null,
+      };
+    },
+    async findUserByEmail(email) {
+      const user = await prisma.user.findUnique({
+        where: { email },
         include: { sacco: { select: { name: true, status: true } } },
       });
       if (!user) return null;
@@ -102,6 +126,65 @@ const app = createApp({
         data: { revokedAt: new Date() },
       });
     },
+    async createVerificationCode(input) {
+      await prisma.verificationCode.create({ data: input });
+    },
+    async findLatestVerificationCode(userId, purpose) {
+      return prisma.verificationCode.findFirst({
+        where: { userId, purpose, consumedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, createdAt: true },
+      });
+    },
+    async countRecentVerificationCodes(userId, purpose, since) {
+      return prisma.verificationCode.count({
+        where: { userId, purpose, createdAt: { gte: since } },
+      });
+    },
+    async consumeVerificationCode(id, codeHash, now) {
+      const consumed = await prisma.verificationCode.updateMany({
+        where: {
+          id,
+          codeHash,
+          consumedAt: null,
+          expiresAt: { gt: now },
+          attempts: { lt: 5 },
+        },
+        data: { consumedAt: now },
+      });
+      if (consumed.count === 1) return true;
+      await prisma.verificationCode.updateMany({
+        where: {
+          id,
+          consumedAt: null,
+          expiresAt: { gt: now },
+          attempts: { lt: 5 },
+        },
+        data: { attempts: { increment: 1 } },
+      });
+      return false;
+    },
+    async setUserPassword(userId, passwordHash, activate) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          ...(activate ? { status: 'ACTIVE' as const } : {}),
+        },
+      });
+    },
+    async setUserEmail(userId, email) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { email, emailVerifiedAt: null },
+      });
+    },
+    async markEmailVerified(userId, verifiedAt) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { emailVerifiedAt: verifiedAt },
+      });
+    },
   },
   saccos: {
     async listSaccos(limit) {
@@ -113,7 +196,7 @@ const app = createApp({
             where: { role: 'SACCO_ADMIN' },
             orderBy: { createdAt: 'asc' },
             take: 1,
-            select: { id: true, fullName: true, phoneNumber: true },
+            select: { id: true, fullName: true, phoneNumber: true, email: true },
           },
         },
       });
@@ -133,12 +216,13 @@ const app = createApp({
           data: {
             fullName: input.adminFullName,
             phoneNumber: input.adminPhoneNumber,
+            email: input.adminEmail,
             passwordHash: input.adminPasswordHash,
             role: 'SACCO_ADMIN',
             status: 'ACTIVE',
             saccoId: sacco.id,
           },
-          select: { id: true, fullName: true, phoneNumber: true },
+          select: { id: true, fullName: true, phoneNumber: true, email: true },
         });
         await transaction.auditLog.create({
           data: {
@@ -163,7 +247,7 @@ const app = createApp({
         ...(cursor
           ? { cursor: { id_saccoId: { id: cursor, saccoId } }, skip: 1 }
           : {}),
-        select: { id: true, fullName: true, phoneNumber: true, status: true, createdAt: true },
+        select: { id: true, fullName: true, phoneNumber: true, email: true, status: true, createdAt: true },
       });
       return makeDirectoryPage(records, limit);
     },
@@ -173,12 +257,13 @@ const app = createApp({
           data: {
             fullName: input.fullName,
             phoneNumber: input.phoneNumber,
+            email: input.email,
             passwordHash: input.passwordHash,
             role: 'RIDER',
-            status: 'ACTIVE',
+            status: 'INVITED',
             saccoId: input.saccoId,
           },
-          select: { id: true, fullName: true, phoneNumber: true, status: true, createdAt: true },
+          select: { id: true, fullName: true, phoneNumber: true, email: true, status: true, createdAt: true },
         });
         await transaction.auditLog.create({
           data: {

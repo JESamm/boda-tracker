@@ -6,7 +6,7 @@ import { apiBaseUrl, isSameOrigin } from '../../auth/login/route';
 const riderSchema = z.object({
   fullName: z.string().trim().min(2).max(100),
   phoneNumber: z.string().trim().min(7).max(20),
-  initialPassword: z.string().min(14).max(128),
+  email: z.string().trim().email().max(254),
 }).strict();
 
 const vehicleSchema = z.object({
