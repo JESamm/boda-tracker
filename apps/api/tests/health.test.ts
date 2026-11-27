@@ -35,6 +35,7 @@ const directoryRepository: DirectoryRepository = {
   async createRider() { throw new Error('Not used by health endpoint tests.'); },
   async updateRider() { throw new Error('Not used by health endpoint tests.'); },
   async deactivateRider() { throw new Error('Not used by health endpoint tests.'); },
+  async anonymizeSuspendedRider() { throw new Error('Not used by health endpoint tests.'); },
   async listVehicles() { return { data: [], nextCursor: null }; },
   async createVehicle() { throw new Error('Not used by health endpoint tests.'); },
 };

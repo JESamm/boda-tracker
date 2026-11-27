@@ -154,6 +154,7 @@ function createTestApi(
     async createRider() { throw new Error('Directory methods are not used in this test.'); },
     async updateRider() { throw new Error('Directory methods are not used in this test.'); },
     async deactivateRider() { throw new Error('Directory methods are not used in this test.'); },
+    async anonymizeSuspendedRider() { throw new Error('Directory methods are not used in this test.'); },
     async listVehicles() { return { data: [], nextCursor: null }; },
     async createVehicle() { throw new Error('Directory methods are not used in this test.'); },
   };
@@ -770,6 +771,7 @@ describe('tenant-scoped rider and fleet directory', () => {
       },
       async updateRider() { throw new Error('Not used in rider creation test.'); },
       async deactivateRider() { throw new Error('Not used in rider creation test.'); },
+      async anonymizeSuspendedRider() { throw new Error('Not used in rider creation test.'); },
       async listVehicles() { return { data: [], nextCursor: null }; },
       async createVehicle() { throw new Error('Not used in rider test.'); },
     };
@@ -844,6 +846,7 @@ describe('tenant-scoped rider and fleet directory', () => {
         return rider;
       },
       async deactivateRider() { throw new Error('Not used in rider update test.'); },
+      async anonymizeSuspendedRider() { throw new Error('Not used in rider update test.'); },
       async listVehicles() { return { data: [], nextCursor: null }; },
       async createVehicle() { throw new Error('Not used in rider update test.'); },
     };
@@ -892,6 +895,7 @@ describe('tenant-scoped rider and fleet directory', () => {
         deactivationInput = { riderId, saccoId, actorUserId };
         return rider;
       },
+      async anonymizeSuspendedRider() { throw new Error('Not used in rider deactivation test.'); },
       async listVehicles() { return { data: [], nextCursor: null }; },
       async createVehicle() { throw new Error('Not used in rider deactivation test.'); },
     };
@@ -913,6 +917,61 @@ describe('tenant-scoped rider and fleet directory', () => {
     });
   });
 
+  it('anonymizes suspended riders using the authenticated SACCO scope', async () => {
+    let anonymizationInput: { riderId: string; saccoId: string; actorUserId: string } | undefined;
+    const directoryRepository: DirectoryRepository = {
+      async listRiders() { return { data: [], nextCursor: null }; },
+      async createRider() { throw new Error('Not used in rider anonymization test.'); },
+      async updateRider() { throw new Error('Not used in rider anonymization test.'); },
+      async deactivateRider() { throw new Error('Not used in rider anonymization test.'); },
+      async anonymizeSuspendedRider(riderId, saccoId, actorUserId) {
+        anonymizationInput = { riderId, saccoId, actorUserId };
+        return 'ANONYMIZED';
+      },
+      async listVehicles() { return { data: [], nextCursor: null }; },
+      async createVehicle() { throw new Error('Not used in rider anonymization test.'); },
+    };
+    const { app } = createTestApi('SACCO_ADMIN', undefined, directoryRepository);
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    const anonymized = await request(app)
+      .delete('/api/v1/riders/rider-1/account')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` });
+
+    expect(anonymized.status).toBe(200);
+    expect(anonymized.body.data.id).toBe('rider-1');
+    expect(anonymizationInput).toEqual({
+      riderId: 'rider-1',
+      saccoId: 'sacco-1',
+      actorUserId: 'user-1',
+    });
+  });
+
+  it('requires a rider to be suspended before account anonymization', async () => {
+    const directoryRepository: DirectoryRepository = {
+      async listRiders() { return { data: [], nextCursor: null }; },
+      async createRider() { throw new Error('Not used in rider anonymization test.'); },
+      async updateRider() { throw new Error('Not used in rider anonymization test.'); },
+      async deactivateRider() { throw new Error('Not used in rider anonymization test.'); },
+      async anonymizeSuspendedRider() { return 'NOT_SUSPENDED'; },
+      async listVehicles() { return { data: [], nextCursor: null }; },
+      async createVehicle() { throw new Error('Not used in rider anonymization test.'); },
+    };
+    const { app } = createTestApi('SACCO_ADMIN', undefined, directoryRepository);
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    const result = await request(app)
+      .delete('/api/v1/riders/rider-1/account')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` });
+
+    expect(result.status).toBe(409);
+    expect(result.body.error.code).toBe('RIDER_NOT_SUSPENDED');
+  });
+
   it('scopes vehicle registration to the current SACCO and restricts directory access to SACCO admins', async () => {
     let vehicleInput: CreateVehicleInput | undefined;
     const vehicle: VehicleSummary = {
@@ -927,6 +986,7 @@ describe('tenant-scoped rider and fleet directory', () => {
       async createRider() { throw new Error('Not used in vehicle test.'); },
       async updateRider() { throw new Error('Not used in vehicle test.'); },
       async deactivateRider() { throw new Error('Not used in vehicle test.'); },
+      async anonymizeSuspendedRider() { throw new Error('Not used in vehicle test.'); },
       async listVehicles(saccoId) {
         expect(saccoId).toBe('sacco-1');
         return { data: [vehicle], nextCursor: null };

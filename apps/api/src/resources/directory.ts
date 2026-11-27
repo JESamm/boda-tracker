@@ -65,6 +65,11 @@ export interface DirectoryRepository {
   createRider(input: CreateRiderInput): Promise<RiderSummary>;
   updateRider(input: UpdateRiderInput): Promise<RiderSummary | null>;
   deactivateRider(riderId: string, saccoId: string, actorUserId: string): Promise<RiderSummary | null>;
+  anonymizeSuspendedRider(
+    riderId: string,
+    saccoId: string,
+    actorUserId: string,
+  ): Promise<'ANONYMIZED' | 'NOT_FOUND' | 'NOT_SUSPENDED'>;
   listVehicles(saccoId: string, limit: number, cursor?: string): Promise<DirectoryPage<VehicleSummary>>;
   createVehicle(input: CreateVehicleInput): Promise<VehicleSummary>;
 }
@@ -296,6 +301,38 @@ export function createDirectoryRouter(
       return;
     }
     response.status(200).json({ data: rider });
+  });
+
+  router.delete('/riders/:riderId/account', authenticate, authorize, async (request: Request, response: Response) => {
+    const actor = request.authenticatedUser;
+    const riderId = z.string().min(1).max(64).safeParse(request.params.riderId);
+    if (!actor?.saccoId) {
+      response.status(403).json({
+        error: { code: 'FORBIDDEN', message: 'A SACCO administrator account is required.' },
+      });
+      return;
+    }
+    if (!riderId.success) {
+      response.status(400).json({
+        error: { code: 'INVALID_REQUEST', message: 'Provide a valid rider account.' },
+      });
+      return;
+    }
+
+    const result = await directoryRepository.anonymizeSuspendedRider(riderId.data, actor.saccoId, actor.id);
+    if (result === 'NOT_FOUND') {
+      response.status(404).json({
+        error: { code: 'RIDER_NOT_FOUND', message: 'That rider account was not found in your SACCO.' },
+      });
+      return;
+    }
+    if (result === 'NOT_SUSPENDED') {
+      response.status(409).json({
+        error: { code: 'RIDER_NOT_SUSPENDED', message: 'Suspend this rider before deleting the account.' },
+      });
+      return;
+    }
+    response.status(200).json({ data: { id: riderId.data } });
   });
 
   router.get('/vehicles', authenticate, authorize, async (request, response) => {

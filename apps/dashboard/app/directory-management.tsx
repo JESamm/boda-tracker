@@ -183,6 +183,36 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
     }
   }
 
+  async function deleteSuspendedRider(record: DirectoryRecord) {
+    if (type !== 'riders' || record.status !== 'SUSPENDED') return;
+    const confirmed = window.confirm(
+      `Remove ${record.fullName ?? 'this rider'} from the directory? Their phone number and email will be freed for a new account. Historical trips, expenses, sessions, and location records will remain with identifying details anonymized. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setError('');
+    setNotice('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`/api/directory/riders/${encodeURIComponent(record.id)}/account`, { method: 'DELETE' });
+      const result = await response.json();
+      if (response.status === 401) {
+        router.replace('/login');
+        return;
+      }
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not remove this rider account.');
+        return;
+      }
+      setRecords((current) => current?.filter((item) => item.id !== record.id) ?? []);
+      setNotice('Rider account removed. Their phone number and email are available for a new account; historical records were anonymized.');
+    } catch {
+      setError('The deletion could not be confirmed. Reload the rider directory before retrying.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function loadMore() {
     if (!nextCursor || isLoadingMore) return;
     setIsLoadingMore(true);
@@ -246,6 +276,16 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
                           type="button"
                         >
                           Deactivate
+                        </button>
+                      )}
+                      {record.status === 'SUSPENDED' && (
+                        <button
+                          className="directory-action-button danger"
+                          disabled={isSubmitting}
+                          onClick={() => void deleteSuspendedRider(record)}
+                          type="button"
+                        >
+                          Delete
                         </button>
                       )}
                     </div>

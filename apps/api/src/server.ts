@@ -1,4 +1,6 @@
+import { randomBytes } from 'node:crypto';
 import { createApp } from './app.js';
+import { hashPassword } from './auth/auth.js';
 import { loadEnv } from './config/env.js';
 import { prisma } from './db/prisma.js';
 import { createPublicMapsRepository } from './resources/maps.js';
@@ -58,8 +60,8 @@ const app = createApp({
       };
     },
     async findUserById(userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
+      const user = await prisma.user.findFirst({
+        where: { id: userId, deletedAt: null },
         include: { sacco: { select: { name: true, status: true } } },
       });
       if (!user) return null;
@@ -241,7 +243,7 @@ const app = createApp({
   directory: {
     async listRiders(saccoId, limit, cursor) {
       const records = await prisma.user.findMany({
-        where: { saccoId, role: 'RIDER' },
+        where: { saccoId, role: 'RIDER', deletedAt: null },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: limit + 1,
         ...(cursor
@@ -280,7 +282,7 @@ const app = createApp({
     async updateRider(input: UpdateRiderInput) {
       return prisma.$transaction(async (transaction) => {
         const existing = await transaction.user.findFirst({
-          where: { id: input.riderId, saccoId: input.saccoId, role: 'RIDER' },
+          where: { id: input.riderId, saccoId: input.saccoId, role: 'RIDER', deletedAt: null },
           select: { email: true },
         });
         if (!existing) return null;
@@ -310,7 +312,7 @@ const app = createApp({
     async deactivateRider(riderId, saccoId, actorUserId) {
       return prisma.$transaction(async (transaction) => {
         const existing = await transaction.user.findFirst({
-          where: { id: riderId, saccoId, role: 'RIDER' },
+          where: { id: riderId, saccoId, role: 'RIDER', deletedAt: null },
           select: { id: true, status: true },
         });
         if (!existing) return null;
@@ -353,6 +355,44 @@ const app = createApp({
           },
         });
         return rider;
+      });
+    },
+    async anonymizeSuspendedRider(riderId, saccoId, actorUserId) {
+      return prisma.$transaction(async (transaction) => {
+        const existing = await transaction.user.findFirst({
+          where: { id: riderId, saccoId, role: 'RIDER', deletedAt: null },
+          select: { id: true, status: true },
+        });
+        if (!existing) return 'NOT_FOUND';
+        if (existing.status !== 'SUSPENDED') return 'NOT_SUSPENDED';
+
+        const now = new Date();
+        await transaction.user.update({
+          where: { id_saccoId: { id: riderId, saccoId } },
+          data: {
+            fullName: 'Deleted rider',
+            phoneNumber: `deleted-${riderId}`,
+            email: null,
+            emailVerifiedAt: null,
+            passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
+            status: 'SUSPENDED',
+            deletedAt: now,
+          },
+        });
+        await transaction.refreshToken.deleteMany({ where: { userId: riderId } });
+        await transaction.passwordResetToken.deleteMany({ where: { userId: riderId } });
+        await transaction.verificationCode.deleteMany({ where: { userId: riderId } });
+        await transaction.idempotencyRecord.deleteMany({ where: { userId: riderId } });
+        await transaction.auditLog.create({
+          data: {
+            saccoId,
+            actorUserId,
+            action: 'rider.account_anonymized',
+            entityType: 'User',
+            entityId: riderId,
+          },
+        });
+        return 'ANONYMIZED';
       });
     },
     async listVehicles(saccoId, limit, cursor) {

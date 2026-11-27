@@ -111,6 +111,7 @@ model User {
   status                UserStatus          @default(ACTIVE)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
+  deletedAt             DateTime?
   sacco                 Sacco?              @relation(fields: [saccoId], references: [id], onDelete: Restrict)
   riderAssignments      VehicleAssignment[] @relation("RiderAssignments")
   actorAssignments      VehicleAssignment[] @relation("AssignmentActor")
@@ -126,6 +127,7 @@ model User {
 
   @@unique([id, saccoId])
   @@index([saccoId, role, status])
+  @@index([saccoId, role, deletedAt])
   @@index([fullName])
 }
 

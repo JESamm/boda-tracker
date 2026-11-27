@@ -16,6 +16,7 @@ import {
   TextInput,
   type NativeSyntheticEvent,
   type TextProps,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map as MapLibreMap, type CameraRef, type PressEvent, type StyleSpecification } from '@maplibre/maplibre-react-native';
@@ -655,6 +656,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.app}>
       <StatusBar style="dark" />
+      {activeTab === 'Today' && <MapIllustration />}
       <View style={styles.topBar}>
         <View style={styles.brandRow}>
           <View style={styles.brandMarkSmall}><Text style={styles.brandLetterSmall}>B</Text></View>
@@ -815,7 +817,8 @@ function LoginScreen({
 }) {
   return (
     <SafeAreaView style={styles.loginScreen}>
-      <StatusBar style="dark" />
+      <MapIllustration />
+      <StatusBar style="light" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.loginKeyboard}
@@ -823,19 +826,19 @@ function LoginScreen({
         <ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled">
           <View style={styles.loginBrand}>
             <View style={styles.brandMark}><Text style={styles.brandLetter}>B</Text></View>
-            <Text style={styles.loginBrandName}>Boda-Tracker</Text>
+            <Text style={[styles.loginBrandName, styles.loginBrandNameOnMap]}>Boda-Tracker</Text>
           </View>
 
-          <View style={styles.loginIntro}>
-            <Text style={styles.eyebrow}>RIDER APP · KENYA</Text>
-            <Text style={styles.loginTitle}>
+          <View style={[styles.loginIntro, styles.loginIntroOnMap]}>
+            <Text style={[styles.eyebrow, styles.loginEyebrowOnMap]}>RIDER APP · KENYA</Text>
+            <Text style={[styles.loginTitle, styles.loginTitleOnMap]}>
               {loginStep === 'credentials'
                 ? 'Your day starts here.'
                 : loginStep.startsWith('activation')
                   ? 'Activate your account.'
                   : `Verify your ${loginMethod === 'email' ? 'email' : 'phone'}.`}
             </Text>
-            <Text style={styles.loginDescription}>
+            <Text style={[styles.loginDescription, styles.loginDescriptionOnMap]}>
               {loginStep === 'credentials'
                 ? loginMethod === 'email'
                   ? 'Sign in with your email and password. A verification code will be sent to your email.'
@@ -1003,7 +1006,7 @@ function LoginScreen({
               </>
             )}
           </View>
-          <Text style={styles.loginFooter}>Secure access for your transport workday</Text>
+          <Text style={[styles.loginFooter, styles.loginFooterOnMap]}>Secure access for your transport workday</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -1039,6 +1042,61 @@ function LoginAction({
   );
 }
 
+function MapIllustration() {
+  const { width, height } = useWindowDimensions();
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={styles.fullScreenMap}
+    >
+      <View
+        style={[
+          styles.fullMapPlane,
+          {
+            width: width * 1.75,
+            height: height * 1.35,
+            left: -width * 0.37,
+            top: -height * 0.16,
+          },
+        ]}
+      >
+        <View style={[styles.fullMapPark, styles.fullMapParkOne]} />
+        <View style={[styles.fullMapPark, styles.fullMapParkTwo]} />
+        <View style={[styles.fullMapPark, styles.fullMapParkThree]} />
+        <View style={[styles.fullMapStreetHorizontal, styles.fullMapStreetHorizontalOne]} />
+        <View style={[styles.fullMapStreetHorizontal, styles.fullMapStreetHorizontalTwo]} />
+        <View style={[styles.fullMapStreetHorizontal, styles.fullMapStreetHorizontalThree]} />
+        <View style={[styles.fullMapStreetHorizontal, styles.fullMapStreetHorizontalFour]} />
+        <View style={[styles.fullMapStreetVertical, styles.fullMapStreetVerticalOne]} />
+        <View style={[styles.fullMapStreetVertical, styles.fullMapStreetVerticalTwo]} />
+        <View style={[styles.fullMapStreetVertical, styles.fullMapStreetVerticalThree]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingOne]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingTwo]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingThree]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingFour]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingFive]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingSix]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingSeven]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingEight]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingNine]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingTen]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingEleven]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingTwelve]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingThirteen]} />
+        <View style={[styles.fullMapBuilding, styles.fullMapBuildingFourteen]} />
+        <View style={[styles.fullMapRoute, styles.fullMapRouteOne]} />
+        <View style={[styles.fullMapRoute, styles.fullMapRouteTwo]} />
+        <View style={[styles.fullMapRoute, styles.fullMapRouteThree]} />
+        <View style={[styles.fullMapRoute, styles.fullMapRouteFour]} />
+        <View style={styles.fullMapRouteMarker} />
+      </View>
+      <View style={styles.fullMapShade} />
+    </View>
+  );
+}
+
 function TodayScreen({
   dateLabel,
   isLoading,
@@ -1062,9 +1120,9 @@ function TodayScreen({
 
   return (
     <View>
-      <Text style={styles.dateLabel}>{dateLabel}</Text>
-      <Text style={styles.greeting}>Habari, {firstName}</Text>
-      <Text style={styles.pageSubtitle}>Your rider workspace</Text>
+      <Text style={styles.todayDateLabel}>{dateLabel}</Text>
+      <Text style={styles.todayGreeting}>Habari, {firstName}</Text>
+      <Text style={styles.todaySubtitle}>Your rider workspace</Text>
 
       <View style={styles.welcomeCard}>
         <View style={styles.welcomeTop}>
@@ -1081,7 +1139,7 @@ function TodayScreen({
         </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Your workspace</Text>
+      <Text style={styles.todaySectionTitle}>Your workspace</Text>
       <Pressable onPress={() => setActiveTab('Trips')} style={styles.featureCard}>
         <View style={[styles.featureIcon, { backgroundColor: colors.primarySoft }]}>
           <Text style={styles.featureIconText}>↗</Text>
@@ -2156,7 +2214,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
   loadingText: { color: colors.muted, fontSize: 14 },
-  loginScreen: { flex: 1, paddingTop: androidTopInset, backgroundColor: colors.canvas },
+  loginScreen: { flex: 1, paddingTop: androidTopInset, backgroundColor: '#0b2f4d' },
   loginKeyboard: { flex: 1 },
   loginContent: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 28, paddingBottom: 20 },
   loginBrand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -2166,10 +2224,118 @@ const styles = StyleSheet.create({
   },
   brandLetter: { color: colors.white, fontSize: 21, fontWeight: '800' },
   loginBrandName: { color: colors.ink, fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  loginBrandNameOnMap: { color: colors.white },
   loginIntro: { marginTop: 42 },
+  loginIntroOnMap: { marginTop: 42 },
   eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
   loginTitle: { marginTop: 10, color: colors.ink, fontSize: 34, fontWeight: '700', letterSpacing: -1.1 },
   loginDescription: { maxWidth: 340, marginTop: 9, color: colors.muted, fontSize: 14, lineHeight: 21 },
+  loginEyebrowOnMap: { color: '#9ae2ff' },
+  loginTitleOnMap: { color: colors.white },
+  loginDescriptionOnMap: { color: '#d0e3ef' },
+  fullScreenMap: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+    backgroundColor: '#0b2f4d',
+  },
+  fullMapPlane: {
+    position: 'absolute',
+    overflow: 'hidden',
+    backgroundColor: '#426f70',
+    transform: [{ perspective: 1000 }, { rotateX: '53deg' }, { rotateZ: '-29deg' }, { scale: 1.08 }],
+  },
+  fullMapPark: { position: 'absolute', borderRadius: 22, backgroundColor: '#4e9875' },
+  fullMapParkOne: { left: '7%', top: '18%', width: '22%', height: '16%' },
+  fullMapParkTwo: { left: '68%', top: '63%', width: '20%', height: '17%', backgroundColor: '#559c78' },
+  fullMapParkThree: { left: '37%', top: '76%', width: '13%', height: '10%', backgroundColor: '#478b70' },
+  fullMapStreetHorizontal: {
+    position: 'absolute',
+    left: '-5%',
+    width: '110%',
+    height: '2.5%',
+    borderRadius: 18,
+    backgroundColor: '#c4d2cb',
+  },
+  fullMapStreetHorizontalOne: { top: '20%' },
+  fullMapStreetHorizontalTwo: { top: '43%', height: '3.2%' },
+  fullMapStreetHorizontalThree: { top: '68%' },
+  fullMapStreetHorizontalFour: { top: '88%', height: '2%' },
+  fullMapStreetVertical: {
+    position: 'absolute',
+    top: '-5%',
+    width: '2.4%',
+    height: '110%',
+    borderRadius: 18,
+    backgroundColor: '#c4d2cb',
+  },
+  fullMapStreetVerticalOne: { left: '25%' },
+  fullMapStreetVerticalTwo: { left: '51%', width: '3%' },
+  fullMapStreetVerticalThree: { left: '77%' },
+  fullMapBuilding: {
+    position: 'absolute',
+    width: '13%',
+    height: '7%',
+    borderBottomWidth: 8,
+    borderBottomColor: '#5f8290',
+    borderRadius: 7,
+    backgroundColor: '#d8e2d9',
+    elevation: 6,
+    shadowColor: '#071c31',
+    shadowOffset: { width: 2, height: 5 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+  },
+  fullMapBuildingOne: { left: '8%', top: '7%' },
+  fullMapBuildingTwo: { left: '38%', top: '8%', backgroundColor: '#d2dedb', borderBottomColor: '#698c97' },
+  fullMapBuildingThree: { left: '68%', top: '6%', height: '9%', backgroundColor: '#e0ded1', borderBottomColor: '#988f76' },
+  fullMapBuildingFour: { left: '86%', top: '20%', width: '11%', backgroundColor: '#d2dedb', borderBottomColor: '#698c97' },
+  fullMapBuildingFive: { left: '7%', top: '39%', height: '9%', backgroundColor: '#e0ded1', borderBottomColor: '#988f76' },
+  fullMapBuildingSix: { left: '37%', top: '36%', width: '11%', backgroundColor: '#d5e3dd', borderBottomColor: '#658b86' },
+  fullMapBuildingSeven: { left: '69%', top: '36%', height: '8%', backgroundColor: '#dce4dc', borderBottomColor: '#658b86' },
+  fullMapBuildingEight: { left: '87%', top: '53%', width: '11%', backgroundColor: '#d6e0e1', borderBottomColor: '#638190' },
+  fullMapBuildingNine: { left: '14%', top: '59%', height: '8%', backgroundColor: '#d7ded2', borderBottomColor: '#8b8b70' },
+  fullMapBuildingTen: { left: '43%', top: '59%', width: '15%', backgroundColor: '#e0ded1', borderBottomColor: '#988f76' },
+  fullMapBuildingEleven: { left: '9%', top: '79%', width: '16%', backgroundColor: '#d6e0e1', borderBottomColor: '#638190' },
+  fullMapBuildingTwelve: { left: '56%', top: '81%', height: '8%', backgroundColor: '#d7ded2', borderBottomColor: '#8b8b70' },
+  fullMapBuildingThirteen: { left: '77%', top: '75%', width: '15%', backgroundColor: '#d5e3dd', borderBottomColor: '#658b86' },
+  fullMapBuildingFourteen: { left: '31%', top: '23%', width: '14%', backgroundColor: '#d6e0e1', borderBottomColor: '#638190' },
+  fullMapRoute: {
+    position: 'absolute',
+    zIndex: 2,
+    height: '1.2%',
+    borderRadius: 20,
+    backgroundColor: '#2fb8f3',
+    elevation: 6,
+  },
+  fullMapRouteOne: { left: '13%', top: '56%', width: '36%' },
+  fullMapRouteTwo: { left: '48%', top: '45%', width: '1.5%', height: '12%' },
+  fullMapRouteThree: { left: '49%', top: '44%', width: '28%' },
+  fullMapRouteFour: { left: '75%', top: '44%', width: '1.5%', height: '17%' },
+  fullMapRouteMarker: {
+    position: 'absolute',
+    zIndex: 3,
+    left: '72%',
+    top: '40%',
+    width: 30,
+    height: 30,
+    borderWidth: 5,
+    borderColor: '#d4f3ff',
+    borderRadius: 16,
+    backgroundColor: '#ff805b',
+    elevation: 8,
+  },
+  fullMapShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(3, 19, 34, 0.25)',
+  },
   loginCard: {
     marginTop: 27, padding: 19, borderRadius: 7, borderWidth: 1, borderColor: colors.line,
     backgroundColor: colors.white, elevation: 1,
@@ -2197,10 +2363,11 @@ const styles = StyleSheet.create({
   loginSecondaryButton: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center' },
   loginSecondaryText: { color: colors.primaryDark, fontSize: 13, fontWeight: '600' },
   loginFooter: { marginTop: 'auto', paddingTop: 20, color: colors.muted, fontSize: 11, textAlign: 'center' },
+  loginFooterOnMap: { color: '#d0e3ef' },
   topBar: {
     height: 62, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.line,
-    backgroundColor: colors.white,
+    backgroundColor: 'rgba(255,255,255,0.94)',
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   brandMarkSmall: {
@@ -2218,6 +2385,12 @@ const styles = StyleSheet.create({
   dateLabel: { color: colors.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
   greeting: { marginTop: 7, color: colors.ink, fontSize: 30, fontWeight: '700', letterSpacing: -0.8 },
   pageSubtitle: { marginTop: 4, color: colors.muted, fontSize: 14 },
+  todayDateLabel: { color: '#9ae2ff', fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
+  todayGreeting: { marginTop: 7, color: colors.white, fontSize: 30, fontWeight: '700', letterSpacing: -0.8 },
+  todaySubtitle: { marginTop: 4, color: '#d0e3ef', fontSize: 14 },
+  todaySectionTitle: {
+    marginTop: 24, marginBottom: 11, color: colors.white, fontSize: 16, fontWeight: '700',
+  },
   welcomeCard: {
     marginTop: 19, paddingVertical: 5, backgroundColor: colors.canvas,
   },
