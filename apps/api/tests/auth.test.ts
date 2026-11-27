@@ -43,6 +43,7 @@ function createTestApi(
     saccoStatus: role === 'PLATFORM_ADMIN' ? null : activeAccount.saccoStatus,
   };
   const sessions: RefreshSession[] = [];
+  const additionalAccounts = new Map<string, AuthAccount>();
   const verificationCodes: Array<{
     id: string;
     userId: string;
@@ -59,13 +60,17 @@ function createTestApi(
   const revokedAll = vi.fn(async () => undefined);
   const repository: AuthRepository = {
     async findUserByPhone(phone) {
-      return phone === account.phoneNumber ? account : null;
+      return phone === account.phoneNumber
+        ? account
+        : [...additionalAccounts.values()].find((candidate) => candidate.phoneNumber === phone) ?? null;
     },
     async findUserByEmail(email) {
-      return email.toLowerCase() === account.email?.toLowerCase() ? account : null;
+      return email.toLowerCase() === account.email?.toLowerCase()
+        ? account
+        : [...additionalAccounts.values()].find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase()) ?? null;
     },
     async findUserById(id) {
-      return id === account.id ? account : null;
+      return id === account.id ? account : additionalAccounts.get(id) ?? null;
     },
     async findRefreshSession(tokenHash) {
       return sessions.find((session) => session.id === tokenHash) ?? null;
@@ -131,9 +136,13 @@ function createTestApi(
     },
     async setUserEmail(userId, email) {
       if (userId === account.id) account = { ...account, email, emailVerifiedAt: null };
+      const additional = additionalAccounts.get(userId);
+      if (additional) additionalAccounts.set(userId, { ...additional, email, emailVerifiedAt: null });
     },
     async markEmailVerified(userId, verifiedAt) {
       if (userId === account.id) account = { ...account, emailVerifiedAt: verifiedAt };
+      const additional = additionalAccounts.get(userId);
+      if (additional) additionalAccounts.set(userId, { ...additional, emailVerifiedAt: verifiedAt });
     },
   };
   const defaultSaccoRepository: SaccoRepository = {
@@ -143,6 +152,8 @@ function createTestApi(
   const defaultDirectoryRepository: DirectoryRepository = {
     async listRiders() { return { data: [], nextCursor: null }; },
     async createRider() { throw new Error('Directory methods are not used in this test.'); },
+    async updateRider() { throw new Error('Directory methods are not used in this test.'); },
+    async deactivateRider() { throw new Error('Directory methods are not used in this test.'); },
     async listVehicles() { return { data: [], nextCursor: null }; },
     async createVehicle() { throw new Error('Directory methods are not used in this test.'); },
   };
@@ -217,6 +228,9 @@ function createTestApi(
     },
     setAccountStatus(status: AuthAccount['status']) {
       account = { ...account, status };
+    },
+    setAdditionalAccount(additional: AuthAccount) {
+      additionalAccounts.set(additional.id, additional);
     },
   };
 }
@@ -754,6 +768,8 @@ describe('tenant-scoped rider and fleet directory', () => {
         createInput = input;
         return rider;
       },
+      async updateRider() { throw new Error('Not used in rider creation test.'); },
+      async deactivateRider() { throw new Error('Not used in rider creation test.'); },
       async listVehicles() { return { data: [], nextCursor: null }; },
       async createVehicle() { throw new Error('Not used in rider test.'); },
     };
@@ -795,6 +811,108 @@ describe('tenant-scoped rider and fleet directory', () => {
     expect(createInput?.passwordHash).toMatch(/^\$scrypt\$/);
   });
 
+  it('updates rider details within the authenticated SACCO and verifies a changed email', async () => {
+    const riderAccount: AuthAccount = {
+      id: 'rider-1',
+      fullName: 'Rider One',
+      phoneNumber: '+254733333333',
+      email: null,
+      emailVerifiedAt: null,
+      passwordHash,
+      role: 'RIDER',
+      saccoId: 'sacco-1',
+      saccoName: 'Test SACCO',
+      saccoStatus: 'ACTIVE',
+      status: 'INVITED',
+    };
+    const rider: RiderSummary = {
+      id: riderAccount.id,
+      fullName: riderAccount.fullName,
+      phoneNumber: riderAccount.phoneNumber,
+      email: 'rider@example.com',
+      status: 'INVITED',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    let updateInput: Parameters<DirectoryRepository['updateRider']>[0] | undefined;
+    let testApi: ReturnType<typeof createTestApi>;
+    const directoryRepository: DirectoryRepository = {
+      async listRiders() { return { data: [], nextCursor: null }; },
+      async createRider() { throw new Error('Not used in rider update test.'); },
+      async updateRider(input) {
+        updateInput = input;
+        testApi.setAdditionalAccount({ ...riderAccount, email: input.email, emailVerifiedAt: null });
+        return rider;
+      },
+      async deactivateRider() { throw new Error('Not used in rider update test.'); },
+      async listVehicles() { return { data: [], nextCursor: null }; },
+      async createVehicle() { throw new Error('Not used in rider update test.'); },
+    };
+    testApi = createTestApi('SACCO_ADMIN', undefined, directoryRepository);
+    testApi.setAdditionalAccount(riderAccount);
+    const login = await request(testApi.app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    const updated = await request(testApi.app)
+      .patch('/api/v1/riders/rider-1')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` })
+      .send({
+        fullName: 'Rider One',
+        phoneNumber: '0733 333 333',
+        email: 'Rider@Example.com',
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updateInput).toMatchObject({
+      riderId: 'rider-1',
+      phoneNumber: '+254733333333',
+      email: 'rider@example.com',
+      saccoId: 'sacco-1',
+      actorUserId: 'user-1',
+    });
+    expect(testApi.getLastEmailCode()).toMatch(/^\d{6}$/);
+    expect(updated.body.data.email).toBe('rider@example.com');
+  });
+
+  it('deactivates riders using the authenticated SACCO scope', async () => {
+    let deactivationInput: { riderId: string; saccoId: string; actorUserId: string } | undefined;
+    const rider: RiderSummary = {
+      id: 'rider-1',
+      fullName: 'Rider One',
+      phoneNumber: '+254733333333',
+      email: 'rider@example.com',
+      status: 'SUSPENDED',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    const directoryRepository: DirectoryRepository = {
+      async listRiders() { return { data: [], nextCursor: null }; },
+      async createRider() { throw new Error('Not used in rider deactivation test.'); },
+      async updateRider() { throw new Error('Not used in rider deactivation test.'); },
+      async deactivateRider(riderId, saccoId, actorUserId) {
+        deactivationInput = { riderId, saccoId, actorUserId };
+        return rider;
+      },
+      async listVehicles() { return { data: [], nextCursor: null }; },
+      async createVehicle() { throw new Error('Not used in rider deactivation test.'); },
+    };
+    const { app } = createTestApi('SACCO_ADMIN', undefined, directoryRepository);
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phoneNumber, password });
+
+    const deactivated = await request(app)
+      .delete('/api/v1/riders/rider-1')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` });
+
+    expect(deactivated.status).toBe(200);
+    expect(deactivated.body.data.status).toBe('SUSPENDED');
+    expect(deactivationInput).toEqual({
+      riderId: 'rider-1',
+      saccoId: 'sacco-1',
+      actorUserId: 'user-1',
+    });
+  });
+
   it('scopes vehicle registration to the current SACCO and restricts directory access to SACCO admins', async () => {
     let vehicleInput: CreateVehicleInput | undefined;
     const vehicle: VehicleSummary = {
@@ -807,6 +925,8 @@ describe('tenant-scoped rider and fleet directory', () => {
     const directoryRepository: DirectoryRepository = {
       async listRiders() { return { data: [], nextCursor: null }; },
       async createRider() { throw new Error('Not used in vehicle test.'); },
+      async updateRider() { throw new Error('Not used in vehicle test.'); },
+      async deactivateRider() { throw new Error('Not used in vehicle test.'); },
       async listVehicles(saccoId) {
         expect(saccoId).toBe('sacco-1');
         return { data: [vehicle], nextCursor: null };

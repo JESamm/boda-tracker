@@ -693,7 +693,15 @@ export default function App() {
           <MapsScreen
             activeTrip={trips.find((trip) => trip.status === 'IN_PROGRESS') ?? null}
             accessToken={session.accessToken}
+            isShiftActive={Boolean(riderWorkspace?.workSession)}
+            isStartingTrip={isTripSubmitting}
+            isTripStatusLoading={isTripsLoading || isWorkspaceLoading}
             isVisible={activeTab === 'Maps'}
+            onGoToToday={() => {
+              setActiveTab('Today');
+              setError('');
+            }}
+            onStartTrip={() => void startTrip()}
           />
           </View>
         )}
@@ -1291,11 +1299,21 @@ function TripsScreen({
 function MapsScreen({
   accessToken,
   activeTrip,
+  isShiftActive,
+  isStartingTrip,
+  isTripStatusLoading,
   isVisible,
+  onGoToToday,
+  onStartTrip,
 }: {
   accessToken: string;
   activeTrip: RiderTrip | null;
+  isShiftActive: boolean;
+  isStartingTrip: boolean;
+  isTripStatusLoading: boolean;
   isVisible: boolean;
+  onGoToToday: () => void;
+  onStartTrip: () => void;
 }) {
   const cameraRef = useRef<CameraRef>(null);
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
@@ -1427,7 +1445,7 @@ function MapsScreen({
 
   function chooseMapDestination(event: NativeSyntheticEvent<PressEvent>) {
     if (!activeTrip) {
-      setError('Start a trip before choosing a destination.');
+      setError('Use the Start trip button above before choosing a destination.');
       return;
     }
     const [longitude, latitude] = event.nativeEvent.lngLat;
@@ -1563,13 +1581,42 @@ function MapsScreen({
 
       <View style={styles.mapNotice}>
         <Text style={styles.mapNoticeTitle}>
-          {activeTrip ? `Trip in progress · ${activeTrip.vehicle.registrationNumber}` : 'Start a trip to plan your route'}
+          {activeTrip
+            ? `Trip in progress · ${activeTrip.vehicle.registrationNumber}`
+            : isTripStatusLoading
+              ? 'Checking your trip status'
+              : isShiftActive
+                ? 'Ready to start your trip?'
+                : 'Start a work shift first'}
         </Text>
         <Text style={styles.mapNoticeBody}>
           {activeTrip
             ? 'Choose a destination by searching or tapping the map.'
-            : 'When you start a trip, you can search for a place or tap any point on the map.'}
+            : isTripStatusLoading
+              ? 'Loading your trip and workday status…'
+              : isShiftActive
+                ? 'Start a trip when you pick up a passenger. Starting it unlocks destination search and map taps.'
+                : 'A work shift is required before starting a trip. Go to Today to start your shift, then return here.'}
         </Text>
+        {!activeTrip && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={isTripStatusLoading || isStartingTrip}
+            onPress={isShiftActive ? onStartTrip : onGoToToday}
+            style={({ pressed }) => [
+              styles.tripPrimaryButton,
+              styles.mapStartTripButton,
+              (isTripStatusLoading || isStartingTrip) && styles.buttonDisabled,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            {isTripStatusLoading || isStartingTrip
+              ? <ActivityIndicator color={colors.white} />
+              : <Text style={styles.primaryButtonText}>
+                {isShiftActive ? 'Start trip' : 'Go to Today to start shift'}
+              </Text>}
+          </Pressable>
+        )}
         <Text style={styles.mapNoticeBody}>
           Map tiles come from OpenStreetMap; search text goes to Photon and route coordinates go to OSRM. These public providers process requests under their own policies; Boda-Tracker does not store them. Route previews use a car profile, not motorcycle navigation.
         </Text>
@@ -2239,6 +2286,7 @@ const styles = StyleSheet.create({
   },
   mapNoticeTitle: { color: colors.primaryDark, fontSize: 13, fontWeight: '800' },
   mapNoticeBody: { marginTop: 5, color: colors.primaryDark, fontSize: 11, lineHeight: 17 },
+  mapStartTripButton: { marginTop: 12 },
   mapLocationButton: {
     minHeight: 44, marginTop: 12, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: colors.line, borderRadius: 4, backgroundColor: colors.white,

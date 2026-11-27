@@ -43,6 +43,15 @@ export interface CreateRiderInput {
   actorUserId: string;
 }
 
+export interface UpdateRiderInput {
+  riderId: string;
+  fullName: string;
+  phoneNumber: string;
+  email: string | null;
+  saccoId: string;
+  actorUserId: string;
+}
+
 export interface CreateVehicleInput {
   registrationNumber: string;
   normalizedRegistration: string;
@@ -54,6 +63,8 @@ export interface CreateVehicleInput {
 export interface DirectoryRepository {
   listRiders(saccoId: string, limit: number, cursor?: string): Promise<DirectoryPage<RiderSummary>>;
   createRider(input: CreateRiderInput): Promise<RiderSummary>;
+  updateRider(input: UpdateRiderInput): Promise<RiderSummary | null>;
+  deactivateRider(riderId: string, saccoId: string, actorUserId: string): Promise<RiderSummary | null>;
   listVehicles(saccoId: string, limit: number, cursor?: string): Promise<DirectoryPage<VehicleSummary>>;
   createVehicle(input: CreateVehicleInput): Promise<VehicleSummary>;
 }
@@ -67,6 +78,12 @@ const createRiderSchema = z.object({
   fullName: z.string().trim().min(2).max(100),
   phoneNumber: z.string().trim().min(7).max(20),
   email: z.string().trim().email().max(254),
+}).strict();
+
+const updateRiderSchema = z.object({
+  fullName: z.string().trim().min(2).max(100),
+  phoneNumber: z.string().trim().min(7).max(20),
+  email: z.string().trim().email().max(254).nullable(),
 }).strict();
 
 const createVehicleSchema = z.object({
@@ -171,6 +188,114 @@ export function createDirectoryRouter(
       }
       throw error;
     }
+  });
+
+  router.patch('/riders/:riderId', authenticate, authorize, async (request: Request, response: Response) => {
+    const input = updateRiderSchema.safeParse(request.body);
+    const actor = request.authenticatedUser;
+    const phoneNumber = input.success ? normalizeKenyanPhoneNumber(input.data.phoneNumber) : null;
+    if (!input.success || !phoneNumber || !actor?.saccoId) {
+      response.status(!actor?.saccoId ? 403 : 400).json({
+        error: !actor?.saccoId
+          ? { code: 'FORBIDDEN', message: 'A SACCO administrator account is required.' }
+          : { code: 'INVALID_REQUEST', message: 'Provide a rider name, valid Kenyan phone number, and valid email address or leave email blank.' },
+      });
+      return;
+    }
+
+    const riderId = z.string().min(1).max(64).safeParse(request.params.riderId);
+    if (!riderId.success) {
+      response.status(400).json({
+        error: { code: 'INVALID_REQUEST', message: 'Provide a valid rider account.' },
+      });
+      return;
+    }
+
+    const email = input.data.email?.trim().toLowerCase() || null;
+    try {
+      const previousAccount = await authRepository.findUserById(riderId.data);
+      const rider = await directoryRepository.updateRider({
+        riderId: riderId.data,
+        fullName: input.data.fullName,
+        phoneNumber,
+        email,
+        saccoId: actor.saccoId,
+        actorUserId: actor.id,
+      });
+      if (!rider) {
+        response.status(404).json({
+          error: { code: 'RIDER_NOT_FOUND', message: 'That rider account was not found in your SACCO.' },
+        });
+        return;
+      }
+
+      const emailChanged = previousAccount?.email !== rider.email;
+      if (emailChanged && rider.email) {
+        const updatedAccount = await authRepository.findUserById(rider.id);
+        if (!updatedAccount) throw new Error('Updated rider account could not be loaded for email verification.');
+        try {
+          await issueEmailVerificationCode(
+            authRepository,
+            emailSender,
+            updatedAccount,
+            'EMAIL_VERIFICATION',
+            accessTokenSecret,
+          );
+        } catch (error) {
+          const rateLimited = error instanceof VerificationRateLimitError;
+          if (!rateLimited) {
+            console.error(JSON.stringify({
+              level: 'error',
+              message: 'Rider email update verification delivery failed',
+              errorType: error instanceof Error ? error.name : 'UnknownError',
+            }));
+          }
+          response.status(rateLimited ? 429 : 503).json({
+            data: rider,
+            error: {
+              code: rateLimited ? 'VERIFICATION_RATE_LIMITED' : 'RIDER_UPDATED_EMAIL_FAILED',
+              message: 'The rider details were saved, but an email verification code could not be sent. Resend the code from the rider app after delivery is available.',
+            },
+          });
+          return;
+        }
+      }
+      response.status(200).json({ data: rider });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        response.status(409).json({
+          error: { code: 'ALREADY_EXISTS', message: 'Another account already uses that phone number or email.' },
+        });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  router.delete('/riders/:riderId', authenticate, authorize, async (request: Request, response: Response) => {
+    const actor = request.authenticatedUser;
+    const riderId = z.string().min(1).max(64).safeParse(request.params.riderId);
+    if (!actor?.saccoId) {
+      response.status(403).json({
+        error: { code: 'FORBIDDEN', message: 'A SACCO administrator account is required.' },
+      });
+      return;
+    }
+    if (!riderId.success) {
+      response.status(400).json({
+        error: { code: 'INVALID_REQUEST', message: 'Provide a valid rider account.' },
+      });
+      return;
+    }
+
+    const rider = await directoryRepository.deactivateRider(riderId.data, actor.saccoId, actor.id);
+    if (!rider) {
+      response.status(404).json({
+        error: { code: 'RIDER_NOT_FOUND', message: 'That rider account was not found in your SACCO.' },
+      });
+      return;
+    }
+    response.status(200).json({ data: rider });
   });
 
   router.get('/vehicles', authenticate, authorize, async (request, response) => {

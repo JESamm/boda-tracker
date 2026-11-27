@@ -9,6 +9,7 @@ interface DirectoryRecord {
   id: string;
   fullName?: string;
   phoneNumber?: string;
+  email?: string | null;
   registrationNumber?: string;
   type?: 'MOTORCYCLE' | 'MATATU';
   status: string;
@@ -16,6 +17,7 @@ interface DirectoryRecord {
 }
 
 const emptyRiderForm = { fullName: '', phoneNumber: '', email: '' };
+const emptyRiderEditForm = { fullName: '', phoneNumber: '', email: '' };
 const emptyVehicleForm: { registrationNumber: string; type: 'MOTORCYCLE' | 'MATATU' } = {
   registrationNumber: '',
   type: 'MOTORCYCLE',
@@ -30,6 +32,8 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [riderForm, setRiderForm] = useState(emptyRiderForm);
+  const [editingRiderId, setEditingRiderId] = useState<string | null>(null);
+  const [riderEditForm, setRiderEditForm] = useState(emptyRiderEditForm);
   const [vehicleForm, setVehicleForm] = useState(emptyVehicleForm);
   const title = type === 'riders' ? 'Riders' : 'Fleet';
   const itemLabel = type === 'riders' ? 'riders' : 'vehicles';
@@ -105,6 +109,80 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
     }
   }
 
+  async function saveRiderEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingRiderId) return;
+    setError('');
+    setNotice('');
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`/api/directory/riders/${encodeURIComponent(editingRiderId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...riderEditForm,
+          email: riderEditForm.email.trim() || null,
+        }),
+      });
+      const result = await response.json();
+      if (response.status === 401) {
+        router.replace('/login');
+        return;
+      }
+      if (result.data) {
+        setRecords((current) => current?.map((record) => record.id === result.data.id ? result.data : record) ?? []);
+      }
+      if (!response.ok) {
+        setError(result.error?.message ?? 'Could not update this rider account.');
+        if (['RIDER_UPDATED_EMAIL_FAILED', 'VERIFICATION_RATE_LIMITED'].includes(result.error?.code ?? '')) {
+          setEditingRiderId(null);
+        }
+        return;
+      }
+
+      const changedEmail = records?.find((record) => record.id === editingRiderId)?.email !== result.data.email;
+      setEditingRiderId(null);
+      setNotice(changedEmail && result.data.email
+        ? 'Rider details updated. A verification code was sent to the new email address.'
+        : 'Rider details updated.');
+    } catch {
+      setError('The update could not be confirmed. Reload the rider directory before retrying.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function deactivateRider(record: DirectoryRecord) {
+    if (type !== 'riders' || record.status === 'SUSPENDED') return;
+    const confirmed = window.confirm(
+      `Deactivate ${record.fullName ?? 'this rider'}? They will lose app access, active work will end, and historical records will be kept.`,
+    );
+    if (!confirmed) return;
+
+    setError('');
+    setNotice('');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`/api/directory/riders/${encodeURIComponent(record.id)}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (response.status === 401) {
+        router.replace('/login');
+        return;
+      }
+      if (!response.ok || !result.data) {
+        setError(result.error?.message ?? 'Could not deactivate this rider account.');
+        return;
+      }
+      setRecords((current) => current?.map((item) => item.id === record.id ? result.data : item) ?? []);
+      setNotice('Rider account deactivated. Historical records have been preserved.');
+    } catch {
+      setError('The deactivation could not be confirmed. Reload the rider directory before retrying.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function loadMore() {
     if (!nextCursor || isLoadingMore) return;
     setIsLoadingMore(true);
@@ -136,8 +214,88 @@ export function DirectoryManagement({ type }: { type: DirectoryType }) {
                   <div className="directory-record-main">
                     <strong>{type === 'riders' ? record.fullName : record.registrationNumber}</strong>
                     <span>{type === 'riders' ? record.phoneNumber : record.type}</span>
+                    {type === 'riders' && <span>{record.email || 'No email address'}</span>}
                   </div>
                   <span className={`sacco-status ${record.status === 'ACTIVE' ? 'active' : ''}`}>{record.status}</span>
+                  {type === 'riders' && (
+                    <div className="directory-record-actions">
+                      {record.status !== 'SUSPENDED' && (
+                        <button
+                          className="directory-action-button"
+                          disabled={isSubmitting}
+                          onClick={() => {
+                            setError('');
+                            setNotice('');
+                            setEditingRiderId(record.id);
+                            setRiderEditForm({
+                              fullName: record.fullName ?? '',
+                              phoneNumber: record.phoneNumber ?? '',
+                              email: record.email ?? '',
+                            });
+                          }}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {record.status !== 'SUSPENDED' && (
+                        <button
+                          className="directory-action-button danger"
+                          disabled={isSubmitting}
+                          onClick={() => void deactivateRider(record)}
+                          type="button"
+                        >
+                          Deactivate
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {type === 'riders' && editingRiderId === record.id && (
+                    <form className="directory-rider-edit-form" onSubmit={saveRiderEdit}>
+                      <label htmlFor={`edit-rider-name-${record.id}`}>Rider full name</label>
+                      <input
+                        id={`edit-rider-name-${record.id}`}
+                        maxLength={100}
+                        onChange={(event) => setRiderEditForm((current) => ({ ...current, fullName: event.target.value }))}
+                        required
+                        value={riderEditForm.fullName}
+                      />
+                      <label htmlFor={`edit-rider-phone-${record.id}`}>Login phone number</label>
+                      <input
+                        id={`edit-rider-phone-${record.id}`}
+                        autoComplete="username"
+                        inputMode="tel"
+                        maxLength={20}
+                        onChange={(event) => setRiderEditForm((current) => ({ ...current, phoneNumber: event.target.value }))}
+                        required
+                        value={riderEditForm.phoneNumber}
+                      />
+                      <label htmlFor={`edit-rider-email-${record.id}`}>Email address</label>
+                      <input
+                        id={`edit-rider-email-${record.id}`}
+                        autoComplete="email"
+                        inputMode="email"
+                        maxLength={254}
+                        onChange={(event) => setRiderEditForm((current) => ({ ...current, email: event.target.value }))}
+                        type="email"
+                        value={riderEditForm.email}
+                      />
+                      <p className="sacco-password-note">A changed email must be verified before email sign-in can be used.</p>
+                      <div className="directory-edit-actions">
+                        <button className="login-submit sacco-submit" disabled={isSubmitting} type="submit">
+                          {isSubmitting ? 'Saving…' : 'Save changes'}
+                        </button>
+                        <button
+                          className="directory-action-button"
+                          disabled={isSubmitting}
+                          onClick={() => setEditingRiderId(null)}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </article>
               ))}
             </div>

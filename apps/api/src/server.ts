@@ -2,7 +2,7 @@ import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
 import { prisma } from './db/prisma.js';
 import { createPublicMapsRepository } from './resources/maps.js';
-import type { CreateRiderInput, CreateVehicleInput, DirectoryPage } from './resources/directory.js';
+import type { CreateRiderInput, CreateVehicleInput, DirectoryPage, UpdateRiderInput } from './resources/directory.js';
 import { OperationsRuleError, type AssignmentSummary, type OperationsRepository, type TripSummary, type WorkSessionSummary } from './resources/operations.js';
 import type { ProvisionSaccoInput, SaccoSummary } from './resources/saccos.js';
 import { AfricaTalkingSmsSender } from './sms/africas-talking.js';
@@ -270,6 +270,84 @@ const app = createApp({
             saccoId: input.saccoId,
             actorUserId: input.actorUserId,
             action: 'rider.created',
+            entityType: 'User',
+            entityId: rider.id,
+          },
+        });
+        return rider;
+      });
+    },
+    async updateRider(input: UpdateRiderInput) {
+      return prisma.$transaction(async (transaction) => {
+        const existing = await transaction.user.findFirst({
+          where: { id: input.riderId, saccoId: input.saccoId, role: 'RIDER' },
+          select: { email: true },
+        });
+        if (!existing) return null;
+
+        const rider = await transaction.user.update({
+          where: { id_saccoId: { id: input.riderId, saccoId: input.saccoId } },
+          data: {
+            fullName: input.fullName,
+            phoneNumber: input.phoneNumber,
+            email: input.email,
+            ...(existing.email !== input.email ? { emailVerifiedAt: null } : {}),
+          },
+          select: { id: true, fullName: true, phoneNumber: true, email: true, status: true, createdAt: true },
+        });
+        await transaction.auditLog.create({
+          data: {
+            saccoId: input.saccoId,
+            actorUserId: input.actorUserId,
+            action: 'rider.updated',
+            entityType: 'User',
+            entityId: rider.id,
+          },
+        });
+        return rider;
+      });
+    },
+    async deactivateRider(riderId, saccoId, actorUserId) {
+      return prisma.$transaction(async (transaction) => {
+        const existing = await transaction.user.findFirst({
+          where: { id: riderId, saccoId, role: 'RIDER' },
+          select: { id: true, status: true },
+        });
+        if (!existing) return null;
+        if (existing.status === 'SUSPENDED') {
+          return transaction.user.findUniqueOrThrow({
+            where: { id_saccoId: { id: riderId, saccoId } },
+            select: { id: true, fullName: true, phoneNumber: true, email: true, status: true, createdAt: true },
+          });
+        }
+
+        const now = new Date();
+        const rider = await transaction.user.update({
+          where: { id_saccoId: { id: riderId, saccoId } },
+          data: { status: 'SUSPENDED' },
+          select: { id: true, fullName: true, phoneNumber: true, email: true, status: true, createdAt: true },
+        });
+        await transaction.vehicleAssignment.updateMany({
+          where: { riderId, saccoId, status: 'ACTIVE' },
+          data: { status: 'ENDED', unassignedAt: now },
+        });
+        await transaction.workSession.updateMany({
+          where: { riderId, saccoId, status: 'ACTIVE' },
+          data: { status: 'INTERRUPTED', endedAt: now },
+        });
+        await transaction.trip.updateMany({
+          where: { riderId, saccoId, status: 'IN_PROGRESS' },
+          data: { status: 'CANCELLED', endedAt: now },
+        });
+        await transaction.refreshToken.updateMany({
+          where: { userId: riderId, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        await transaction.auditLog.create({
+          data: {
+            saccoId,
+            actorUserId,
+            action: 'rider.deactivated',
             entityType: 'User',
             entityId: rider.id,
           },
