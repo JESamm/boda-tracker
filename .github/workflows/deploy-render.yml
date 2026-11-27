@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  migrate-and-deploy:
+  check-and-deploy:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -37,16 +37,6 @@ jobs:
 
       - name: Run tests
         run: npm test
-
-      - name: Apply database migrations
-        env:
-          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
-        run: |
-          if [ -z "$MIGRATION_DATABASE_URL" ]; then
-            echo "Set the MIGRATION_DATABASE_URL repository secret before deploying." >&2
-            exit 1
-          fi
-          npm run db:deploy --workspace @boda-tracker/api
 
       - name: Trigger Render API deployment
         env:

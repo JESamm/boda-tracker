@@ -6,7 +6,7 @@ services:
     plan: free
     autoDeploy: false
     buildCommand: npm ci --include=dev && npm run build --workspace @boda-tracker/api
-    startCommand: npm run start --workspace @boda-tracker/api
+    startCommand: npm run db:deploy --workspace @boda-tracker/api && npm run start --workspace @boda-tracker/api
     healthCheckPath: /health/live
     envVars:
       - key: NODE_ENV
